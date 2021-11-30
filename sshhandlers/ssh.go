@@ -2,14 +2,12 @@ package sshhandlers
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
-	"reflect"
 	"syscall"
 	"unsafe"
 
@@ -20,18 +18,14 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-var (
-	shellUrl = os.Args[2]
-)
-
-func GetUnexportedField(field reflect.Value) interface{} {
-	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
+type CasedShellSSHHandler struct {
+	ShellUrl string
 }
 
-func SetUnexportedField(field reflect.Value, value interface{}) {
-	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).
-		Elem().
-		Set(reflect.ValueOf(value))
+func NewCasedShellSSHHandler(shellUrl string) *CasedShellSSHHandler {
+	return &CasedShellSSHHandler{
+		ShellUrl: shellUrl,
+	}
 }
 
 func setWinsize(f *os.File, w, h int) {
@@ -39,8 +33,8 @@ func setWinsize(f *os.File, w, h int) {
 		uintptr(unsafe.Pointer(&struct{ h, w, x, y uint16 }{uint16(h), uint16(w), 0, 0})))
 }
 
-func casedShellIsUserAuthority(providedPubKey gossh.PublicKey) bool {
-	resp, err := http.Get(fmt.Sprintf("%s/ca.pub", shellUrl))
+func (h *CasedShellSSHHandler) casedShellIsUserAuthority(providedPubKey gossh.PublicKey) bool {
+	resp, err := http.Get(fmt.Sprintf("%s/ca.pub", h.ShellUrl))
 	if err != nil || resp.StatusCode != 200 {
 		log.Println("error contacting shell")
 		return false
@@ -54,7 +48,7 @@ func casedShellIsUserAuthority(providedPubKey gossh.PublicKey) bool {
 	return bytes.Equal(providedPubKey.Marshal(), authorizedKey.Marshal())
 }
 
-func CasedShellPublicKeyHandler(ctx ssh.Context, pubKey ssh.PublicKey) bool {
+func (h *CasedShellSSHHandler) CasedShellPublicKeyHandler(ctx ssh.Context, pubKey ssh.PublicKey) bool {
 	cert, ok := pubKey.(*gossh.Certificate)
 	if !ok {
 		log.Println("normal key pairs not accepted")
@@ -65,7 +59,7 @@ func CasedShellPublicKeyHandler(ctx ssh.Context, pubKey ssh.PublicKey) bool {
 		return false
 	}
 	c := &gossh.CertChecker{
-		IsUserAuthority: casedShellIsUserAuthority,
+		IsUserAuthority: h.casedShellIsUserAuthority,
 	}
 
 	if !c.IsUserAuthority(cert.SignatureKey) {
@@ -73,7 +67,7 @@ func CasedShellPublicKeyHandler(ctx ssh.Context, pubKey ssh.PublicKey) bool {
 		return false
 	}
 
-	resp, err := http.Get(fmt.Sprintf("%s/principal.txt", shellUrl))
+	resp, err := http.Get(fmt.Sprintf("%s/principal.txt", h.ShellUrl))
 	if err != nil || resp.StatusCode != 200 {
 		log.Println("error contacting shell")
 		return false
@@ -95,60 +89,35 @@ func CasedShellPublicKeyHandler(ctx ssh.Context, pubKey ssh.PublicKey) bool {
 	return true
 }
 
-func HerokuOauthUrl(ctx ssh.Context) string {
-	return fmt.Sprintf("%s/oauth/stateToken=%s", shellUrl, ctx.SessionID())
+func failAndExit(s ssh.Session, err string) {
+	log.Println(err)
+	io.WriteString(s, err+"\n")
+	s.Exit(1)
 }
 
-func CasedShellKeyboardInteractiveHandler(provider string, tokens types.TokenStore) ssh.KeyboardInteractiveHandler {
-	handler := func(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
-		answers, err := challenger(provider, HerokuOauthUrl(ctx), []string{"press enter to continue"}, []bool{false})
-		if len(answers) == 1 && answers[0] == "" && err == nil {
-			if tokens.Get(ctx.SessionID()) == "" || tokens.Get(ctx.SessionID()) == "pending" {
-				return false
-			} else {
-				// we must have an actual token
-				return true
-			}
-		} else {
-			return false
-		}
-	}
-	return handler
-}
-
-func CasedShellSessionHandler(tokens types.TokenStore, command []string, cmdTokenConfigurator types.CmdTokenConfigurator) ssh.Handler {
+func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.KeyboardInteractiveOAuthHandler, command []string) ssh.Handler {
 	return func(s ssh.Session) {
 		log.Printf("accepted connection for user %s\n", s.User())
 		if len(s.Command()) > 0 {
-			log.Println("command execution not supported")
-			io.WriteString(s, "command execution not supported\n")
-			s.Exit(1)
+			failAndExit(s, "command execution not supported")
 			return
 		}
 
-		log.Println("starting pty")
 		ptyReq, winCh, isPty := s.Pty()
 
 		if isPty {
-			conn := GetUnexportedField(reflect.ValueOf(s).Elem().FieldByName("unexported")).(*gossh.ServerConn)
-			sessionID := hex.EncodeToString(conn.SessionID())
-			var t string
-			if tokens.Get(sessionID) == "" || tokens.Get(sessionID) == "pending" {
-				io.WriteString(s, "can't find token\n")
-				s.Exit(1)
-				return
-			} else {
-				t = tokens.Get(sessionID)
-			}
 			cmd := exec.Command(command[0], command[1:]...)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
 			cmd.Env = append(cmd.Env, "SHELL=/bin/bash")
 			cmd.Env = append(cmd.Env, fmt.Sprintf("HOME=%s", os.Getenv("HOME")))
-			cmdTokenConfigurator(cmd, t)
+			err := handler.HandleSessionCommand(s, cmd)
+			if err != nil {
+				failAndExit(s, "error configuring command with token")
+				return
+			}
 			f, err := pty.Start(cmd)
 			if err != nil {
-				io.WriteString(s, "error starting PTY\n")
-				s.Exit(1)
+				failAndExit(s, "error starting PTY")
 				return
 			}
 			go func() {
@@ -162,8 +131,8 @@ func CasedShellSessionHandler(tokens types.TokenStore, command []string, cmdToke
 			io.Copy(s, f)
 			cmd.Wait()
 		} else {
-			io.WriteString(s, "No PTY requested.\n")
-			s.Exit(1)
+			failAndExit(s, "no PTY requested")
+			return
 		}
 	}
 }

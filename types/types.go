@@ -1,7 +1,10 @@
 package types
 
 import (
+	"net/http"
 	"os/exec"
+
+	"github.com/gliderlabs/ssh"
 )
 
 type TokenStore interface {
@@ -27,4 +30,13 @@ func (s *MemoryTokenStore) Get(sessionID string) string {
 
 func (s *MemoryTokenStore) Set(sessionID, value string) {
 	s.Tokens[sessionID] = value
+}
+
+type KeyboardInteractiveOAuthHandler interface {
+	AuthURLGenerator(ctx ssh.Context) string
+	HandleAuth(w http.ResponseWriter, r *http.Request)
+	HandleAuthCallback(w http.ResponseWriter, r *http.Request)
+	HandleUser(w http.ResponseWriter, r *http.Request)
+	HandleKeyboardInteractive() ssh.KeyboardInteractiveHandler
+	HandleSessionCommand(ssh.Session, *exec.Cmd) error
 }
