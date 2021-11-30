@@ -39,7 +39,7 @@ func main() {
 		Addr:                       ":2224",
 		PublicKeyHandler:           sshHandler.CasedShellPublicKeyHandler,
 		IdleTimeout:                60 * time.Second,
-		Version:                    "Cased Shell SSH",
+		Version:                    "Cased Shell + " + provider,
 		KeyboardInteractiveHandler: handler.HandleKeyboardInteractive(),
 	}
 
