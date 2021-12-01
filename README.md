@@ -34,7 +34,7 @@ heroku labs:enable runtime-dyno-metadata
 heroku plugins:install heroku-cli-oauth
 heroku clients:create "<app_name>.herokuapp.com" https://<app_name>.herokuapp.com/oauth/auth/callback
 heroku config:add HEROKU_OAUTH_ID=     # set to `id` from command output above
-heroku config:add HEROKU_SECRET= # set to `secret` from command output above
+heroku config:add HEROKU_OAUTH_SECRET= # set to `secret` from command output above
 heroku config:add COOKIE_SECRET=`openssl rand -hex 32`
 heroku config:add COOKIE_ENCRYPT=`openssl rand -hex 16`
 git push heroku main

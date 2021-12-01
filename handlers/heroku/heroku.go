@@ -44,7 +44,7 @@ func NewHerokuSSHSessionOauthHandler(shellUrl string) *HerokuSSHSessionOauthHand
 		Tokens:   types.NewMemoryTokenStore(),
 		OAuthConfig: &oauth2.Config{
 			ClientID:     os.Getenv("HEROKU_OAUTH_ID"),
-			ClientSecret: os.Getenv("HEROKU_SECRET"),
+			ClientSecret: os.Getenv("HEROKU_OAUTH_SECRET"),
 			Endpoint: oauth2.Endpoint{
 				AuthURL:  "https://id.heroku.com/oauth/authorize",
 				TokenURL: "https://id.heroku.com/oauth/token",
