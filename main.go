@@ -69,5 +69,5 @@ func main() {
 }
 
 func usage() {
-	log.Fatalf("\nUsage: %s heroku https://shell.example.com bash -i", command)
+	log.Fatalf("\nUsage: %s <provider> <shell_url> <default command to run for new sessions>", command)
 }

@@ -161,6 +161,8 @@ func (h *HerokuSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Sess
 				token = h.Tokens.Get(sessionID)
 				io.WriteString(session, "done!\n")
 				cmd.Env = append(cmd.Env, "HEROKU_OAUTH_TOKEN="+token)
+				// clear token after copying it to the environment
+				h.Tokens.Set(sessionID, "")
 				return nil
 			} else {
 				io.WriteString(session, ".")

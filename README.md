@@ -1,6 +1,25 @@
-# Cased Shell Oauth Handlers
+# Cased Shell OAuth Handlers
 
-## Heroku
+An SSH server that authenticates against Cased Shell and starts Sessions with an web-based OAuth token exchange. The resulting token is placed in the environment, allowing the user to perform actions against an upstream service using the token obtained during the process.
+
+Supported providers:
+
+- Heroku
+- ???
+
+# Usage
+
+```
+./ssh-oauth-handlers <provider> <shell_url> <default command to run for new sessions>
+```
+
+## Provider: Heroku
+
+```
+export COOKIE_SECRET=`openssl rand -hex 32`
+export COOKIE_ENCRYPT=`openssl rand -hex 16`
+HEROKU_OAUTH_SECRET=<secret>  HEROKU_OAUTH_SECRET=<secret> ./ssh-oauth-handlers heroku http://localhost:8888 bash -i
+```
 
 1. Create a Heroku app. Its name will be referenced as `<app_name>` throughout this tutorial.
 2. Create a Cased Shell instance named `<app_name>.herokuapp.com`. On the Settings tab, enable Certificate Authentication. Configure a host to allow access by connections signed by your certificate, then add the host to Cased Shell.
