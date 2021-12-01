@@ -5,7 +5,7 @@ An SSH server that authenticates against Cased Shell and starts Sessions with an
 Supported providers:
 
 - Heroku
-- ???
+- _more to come_
 
 # Usage
 
