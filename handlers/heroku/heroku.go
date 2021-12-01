@@ -160,7 +160,7 @@ func (h *HerokuSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Sess
 			if h.Tokens.Get(sessionID) != "" && h.Tokens.Get(sessionID) != "pending" {
 				token = h.Tokens.Get(sessionID)
 				io.WriteString(session, "done!\n")
-				cmd.Env = append(cmd.Env, "HEROKU_OAUTH_TOKEN="+token)
+				cmd.Env = append(cmd.Env, "HEROKU_API_KEY="+token)
 				// clear token after copying it to the environment
 				h.Tokens.Set(sessionID, "")
 				return nil
