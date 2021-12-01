@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/cased/shell-util/types"
+	"github.com/cased/ssh-oauth-handlers/types"
 	"github.com/creack/pty"
 	"github.com/gliderlabs/ssh"
 
@@ -95,7 +95,7 @@ func failAndExit(s ssh.Session, err string) {
 	s.Exit(1)
 }
 
-func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.KeyboardInteractiveOAuthHandler, command []string) ssh.Handler {
+func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.SSHSessionOauthHandler, command []string) ssh.Handler {
 	return func(s ssh.Session) {
 		log.Printf("accepted connection for user %s\n", s.User())
 		if len(s.Command()) > 0 {
@@ -110,7 +110,7 @@ func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.KeyboardIn
 			cmd.Env = append(cmd.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
 			cmd.Env = append(cmd.Env, "SHELL=/bin/bash")
 			cmd.Env = append(cmd.Env, fmt.Sprintf("HOME=%s", os.Getenv("HOME")))
-			err := handler.HandleSessionCommand(s, cmd)
+			err := handler.SSHSessionCommandHandler(s, cmd)
 			if err != nil {
 				failAndExit(s, "error configuring command with token")
 				return

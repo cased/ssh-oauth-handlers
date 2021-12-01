@@ -12,8 +12,6 @@ type TokenStore interface {
 	Set(sessionID, value string)
 }
 
-type CmdTokenConfigurator func(*exec.Cmd, string) error
-
 type MemoryTokenStore struct {
 	Tokens map[string]string
 }
@@ -32,11 +30,9 @@ func (s *MemoryTokenStore) Set(sessionID, value string) {
 	s.Tokens[sessionID] = value
 }
 
-type KeyboardInteractiveOAuthHandler interface {
-	AuthURLGenerator(ctx ssh.Context) string
+type SSHSessionOauthHandler interface {
 	HandleAuth(w http.ResponseWriter, r *http.Request)
 	HandleAuthCallback(w http.ResponseWriter, r *http.Request)
 	HandleUser(w http.ResponseWriter, r *http.Request)
-	HandleKeyboardInteractive() ssh.KeyboardInteractiveHandler
-	HandleSessionCommand(ssh.Session, *exec.Cmd) error
+	SSHSessionCommandHandler(ssh.Session, *exec.Cmd) error
 }

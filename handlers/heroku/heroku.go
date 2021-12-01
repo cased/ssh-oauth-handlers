@@ -6,13 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"reflect"
+	"time"
 	"unsafe"
 
-	"github.com/cased/shell-util/types"
+	"github.com/cased/ssh-oauth-handlers/types"
 	"github.com/gliderlabs/ssh"
 	"github.com/gorilla/sessions"
 	h5 "github.com/heroku/heroku-go/v5"
@@ -21,16 +23,7 @@ import (
 )
 
 var (
-	store       = sessions.NewCookieStore([]byte(os.Getenv("COOKIE_SECRET")), []byte(os.Getenv("COOKIE_ENCRYPT")))
-	oauthConfig = &oauth2.Config{
-		ClientID:     os.Getenv("OAUTH_ID"),
-		ClientSecret: os.Getenv("OAUTH_SECRET"),
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://id.heroku.com/oauth/authorize",
-			TokenURL: "https://id.heroku.com/oauth/token",
-		},
-		Scopes:      []string{"global"}, // See https://devcenter.heroku.com/articles/oauth#scopes
-		RedirectURL: "https://" + os.Getenv("CASED_SHELL_HOSTNAME") + "/oauth/auth/callback"}
+	store = sessions.NewCookieStore([]byte(os.Getenv("COOKIE_SECRET")), []byte(os.Getenv("COOKIE_ENCRYPT")))
 )
 
 func init() {
@@ -39,25 +32,36 @@ func init() {
 	store.MaxAge(60 * 60 * 8)
 }
 
-type HerokuKeyboardInteractiveOAuthHandler struct {
-	ShellUrl string
-	Tokens   types.TokenStore
+type HerokuSSHSessionOauthHandler struct {
+	ShellUrl    string
+	Tokens      types.TokenStore
+	OAuthConfig *oauth2.Config
 }
 
-func NewHerokuKeyboardInteractiveOAuthHandler(shellUrl string) *HerokuKeyboardInteractiveOAuthHandler {
-	return &HerokuKeyboardInteractiveOAuthHandler{
+func NewHerokuSSHSessionOauthHandler(shellUrl string) *HerokuSSHSessionOauthHandler {
+	return &HerokuSSHSessionOauthHandler{
 		ShellUrl: shellUrl,
 		Tokens:   types.NewMemoryTokenStore(),
+		OAuthConfig: &oauth2.Config{
+			ClientID:     os.Getenv("HEROKU_OAUTH_ID"),
+			ClientSecret: os.Getenv("HEROKU_SECRET"),
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  "https://id.heroku.com/oauth/authorize",
+				TokenURL: "https://id.heroku.com/oauth/token",
+			},
+			Scopes:      []string{"global"}, // See https://devcenter.heroku.com/articles/oauth#scopes
+			RedirectURL: shellUrl + "/oauth/auth/callback",
+		},
 	}
 }
 
-func (h *HerokuKeyboardInteractiveOAuthHandler) AuthURLGenerator(ctx ssh.Context) string {
-	return fmt.Sprintf("%s/oauth/stateToken=%s", h.ShellUrl, ctx.SessionID())
+func (h *HerokuSSHSessionOauthHandler) authURLGenerator(sessionID string) string {
+	return fmt.Sprintf("%s/oauth/auth?stateToken=%s", h.ShellUrl, sessionID)
 }
 
-func (h *HerokuKeyboardInteractiveOAuthHandler) HandleAuth(w http.ResponseWriter, r *http.Request) {
+func (h *HerokuSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *http.Request) {
 	stateToken := r.URL.Query().Get("stateToken")
-	url := oauthConfig.AuthCodeURL(stateToken)
+	url := h.OAuthConfig.AuthCodeURL(stateToken)
 	session, err := store.Get(r, "cased-shell-heroku")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -72,7 +76,7 @@ func (h *HerokuKeyboardInteractiveOAuthHandler) HandleAuth(w http.ResponseWriter
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
-func (h *HerokuKeyboardInteractiveOAuthHandler) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
+func (h *HerokuSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	session, err := store.Get(r, "cased-shell-heroku")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -89,7 +93,7 @@ func (h *HerokuKeyboardInteractiveOAuthHandler) HandleAuthCallback(w http.Respon
 		return
 	}
 	ctx := context.Background()
-	token, err := oauthConfig.Exchange(ctx, code)
+	token, err := h.OAuthConfig.Exchange(ctx, code)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -104,7 +108,7 @@ func (h *HerokuKeyboardInteractiveOAuthHandler) HandleAuthCallback(w http.Respon
 
 }
 
-func (h *HerokuKeyboardInteractiveOAuthHandler) HandleUser(w http.ResponseWriter, r *http.Request) {
+func (h *HerokuSSHSessionOauthHandler) HandleUser(w http.ResponseWriter, r *http.Request) {
 	session, err := store.Get(r, "cased-shell-heroku")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -129,39 +133,39 @@ func (h *HerokuKeyboardInteractiveOAuthHandler) HandleUser(w http.ResponseWriter
 	fmt.Fprintf(w, `<html><body><p>Hi %s! You can close this window now, your shell should be ready.</p></body></html>`, account.Email)
 }
 
-func (h *HerokuKeyboardInteractiveOAuthHandler) HandleKeyboardInteractive() ssh.KeyboardInteractiveHandler {
-	handler := func(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
-		answers, err := challenger("heroku", h.AuthURLGenerator(ctx), []string{"press enter to continue"}, []bool{false})
-		if len(answers) == 1 && answers[0] == "" && err == nil {
-			if h.Tokens.Get(ctx.SessionID()) == "" || h.Tokens.Get(ctx.SessionID()) == "pending" {
-				return false
-			} else {
-				// we must have an actual token
-				return true
-			}
-		} else {
-			return false
-		}
-	}
-	return handler
-}
-
 func getUnexportedField(field reflect.Value) interface{} {
 	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
 }
 
-func (h *HerokuKeyboardInteractiveOAuthHandler) HandleSessionCommand(session ssh.Session, cmd *exec.Cmd) error {
+func (h *HerokuSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
-	var t string
-	if h.Tokens.Get(sessionID) == "" || h.Tokens.Get(sessionID) == "pending" {
-		return errors.New("can't find token")
-	} else {
-		t = h.Tokens.Get(sessionID)
+	io.WriteString(session, "Login to Heroku: "+h.authURLGenerator(sessionID))
+	io.WriteString(session, "\nWaiting for token...")
+	var token string
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	done := make(chan bool)
+	go func() {
+		time.Sleep(45 * time.Second)
+		done <- true
+	}()
+	for {
+		select {
+		case <-done:
+			if h.Tokens.Get(sessionID) == "" || h.Tokens.Get(sessionID) == "pending" {
+				return errors.New("timeout")
+			}
+		case <-ticker.C:
+			if h.Tokens.Get(sessionID) != "" && h.Tokens.Get(sessionID) != "pending" {
+				token = h.Tokens.Get(sessionID)
+				io.WriteString(session, "done!\n")
+				cmd.Env = append(cmd.Env, "HEROKU_OAUTH_TOKEN="+token)
+				return nil
+			} else {
+				io.WriteString(session, ".")
+			}
+
+		}
 	}
-	if cmd == nil {
-		return errors.New("cmd is nil")
-	}
-	cmd.Env = append(cmd.Env, "HEROKU_OAUTH_TOKEN="+t)
-	return nil
 }
