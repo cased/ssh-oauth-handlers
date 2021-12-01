@@ -28,7 +28,7 @@ func main() {
 	var handler types.SSHSessionOauthHandler
 	switch provider {
 	case "heroku":
-		handler = heroku.NewHerokuSSHSessionOauthHandler(shellUrl)
+		handler = heroku.NewHerokuSSHSessionOauthHandler(shellUrl, cmd)
 	default:
 		usage()
 	}

@@ -98,26 +98,34 @@ func failAndExit(s ssh.Session, err string) {
 func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.SSHSessionOauthHandler, command []string) ssh.Handler {
 	return func(s ssh.Session) {
 		log.Printf("accepted connection for user %s\n", s.User())
+		var args []string
 		if len(s.Command()) > 0 {
-			failAndExit(s, "command execution not supported")
-			return
+			args = s.Command()
+		} else {
+			args = command
 		}
 
 		ptyReq, winCh, isPty := s.Pty()
 
 		if isPty {
-			cmd := exec.Command(command[0], command[1:]...)
+			var cmd *exec.Cmd
+			if len(args) > 1 {
+				cmd = exec.Command(args[0], args[1:]...)
+			} else {
+				cmd = exec.Command(args[0])
+			}
 			cmd.Env = append(cmd.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
 			cmd.Env = append(cmd.Env, "SHELL=/bin/bash")
 			cmd.Env = append(cmd.Env, fmt.Sprintf("HOME=%s", os.Getenv("HOME")))
 			err := handler.SSHSessionCommandHandler(s, cmd)
 			if err != nil {
-				failAndExit(s, "error configuring command with token")
+				failAndExit(s, err.Error())
 				return
 			}
+			log.Println("starting session")
 			f, err := pty.Start(cmd)
 			if err != nil {
-				failAndExit(s, "error starting PTY")
+				failAndExit(s, err.Error())
 				return
 			}
 			go func() {
