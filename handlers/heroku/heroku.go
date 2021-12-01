@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -33,15 +34,17 @@ func init() {
 }
 
 type HerokuSSHSessionOauthHandler struct {
-	ShellUrl    string
-	Tokens      types.TokenStore
-	OAuthConfig *oauth2.Config
+	DefaultCommand []string
+	ShellUrl       string
+	Tokens         types.TokenStore
+	OAuthConfig    *oauth2.Config
 }
 
-func NewHerokuSSHSessionOauthHandler(shellUrl string) *HerokuSSHSessionOauthHandler {
+func NewHerokuSSHSessionOauthHandler(shellUrl string, defaultCommand []string) *HerokuSSHSessionOauthHandler {
 	return &HerokuSSHSessionOauthHandler{
-		ShellUrl: shellUrl,
-		Tokens:   types.NewMemoryTokenStore(),
+		ShellUrl:       shellUrl,
+		DefaultCommand: defaultCommand,
+		Tokens:         types.NewMemoryTokenStore(),
 		OAuthConfig: &oauth2.Config{
 			ClientID:     os.Getenv("HEROKU_OAUTH_ID"),
 			ClientSecret: os.Getenv("HEROKU_OAUTH_SECRET"),
@@ -137,7 +140,34 @@ func getUnexportedField(field reflect.Value) interface{} {
 	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
 }
 
+func Equal(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *HerokuSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error {
+	log.Printf("validating command: %+v", cmd.Args)
+	if cmd.Args[0] == "heroku" {
+		return nil
+	}
+	if Equal(cmd.Args, h.DefaultCommand) {
+		return nil
+	}
+	return errors.New("command not recognized")
+}
+
 func (h *HerokuSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
+	if err := h.validateCommand(cmd); err != nil {
+		return err
+	}
+
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
 	io.WriteString(session, "Login to Heroku: "+h.authURLGenerator(sessionID))
