@@ -36,7 +36,7 @@ func setWinsize(f *os.File, w, h int) {
 func (h *CasedShellSSHHandler) casedShellIsUserAuthority(providedPubKey gossh.PublicKey) bool {
 	resp, err := http.Get(fmt.Sprintf("%s/ca.pub", h.ShellUrl))
 	if err != nil || resp.StatusCode != 200 {
-		log.Println("error contacting shell")
+		log.Println(fmt.Sprintf("error contacting shell: %v", err))
 		return false
 	}
 	authorizedKeyString, _ := io.ReadAll(resp.Body)
@@ -69,7 +69,7 @@ func (h *CasedShellSSHHandler) CasedShellPublicKeyHandler(ctx ssh.Context, pubKe
 
 	resp, err := http.Get(fmt.Sprintf("%s/principal.txt", h.ShellUrl))
 	if err != nil || resp.StatusCode != 200 {
-		log.Println("error contacting shell")
+		log.Println(fmt.Sprintf("error contacting shell: %v", err))
 		return false
 	}
 	principal, _ := io.ReadAll(resp.Body)
