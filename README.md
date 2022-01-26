@@ -1,6 +1,6 @@
 # Cased Shell OAuth Handlers
 
-An SSH server that authenticates against Cased Shell and starts Sessions with an web-based OAuth token exchange. The resulting token is placed in the environment, allowing the user to perform actions against an upstream service using the token obtained during the process.
+A SSH server that authenticates against Cased Shell and starts Sessions with an web-based OAuth token exchange. The resulting token is placed in the environment, allowing the user to perform actions against an upstream service using the token obtained during the process.
 
 Supported providers:
 
