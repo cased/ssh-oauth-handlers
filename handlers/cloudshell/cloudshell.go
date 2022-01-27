@@ -82,6 +82,48 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
+func tokenToIDToken(token *o2.Token) (string, error) {
+	idTokenRaw := token.Extra("id_token")
+	if idTokenRaw == nil {
+		return "", errors.New("unable to assert id_token")
+	}
+	idToken, ok := idTokenRaw.(string)
+	if !ok {
+		return "", errors.New("unable to coerce id_token")
+	}
+	return idToken, nil
+}
+
+func tokenFromSession(value interface{}) (*o2.Token, error) {
+	token, ok := value.(*o2.Token)
+	if !ok {
+		return nil, errors.New("unable to assert id_token")
+	}
+	return token, nil
+}
+
+func (g *CloudShellSSHSessionOauthHandler) getTokenInfo(token *o2.Token) (*oauth2.Tokeninfo, error) {
+	ctx := context.Background()
+	oauth2Service, err := oauth2.NewService(ctx, option.WithTokenSource(g.OAuthConfig.TokenSource(ctx, token)))
+	if err != nil {
+		return nil, err
+	}
+
+	idToken, err := tokenToIDToken(token)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenInfoCall := oauth2Service.Tokeninfo()
+	tokenInfoCall.IdToken(idToken)
+	tokenInfo, err := tokenInfoCall.Do()
+
+	if err != nil {
+		return nil, err
+	}
+	return tokenInfo, nil
+}
+
 func (g *CloudShellSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	session, err := store.Get(r, "cased-shell-gcloud")
 	if err != nil {
@@ -105,6 +147,13 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWri
 		return
 	}
 	session.Values["gcloud-oauth-token"] = token
+	tokenInfo, err := g.getTokenInfo(token)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	g.Tokens.Set(tokenInfo.Email, token.AccessToken)
+	g.Tokens.Set(stateToken, tokenInfo.Email)
 	if err := session.Save(r, w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -118,43 +167,16 @@ func (g *CloudShellSSHSessionOauthHandler) HandleUser(w http.ResponseWriter, r *
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	token, ok := session.Values["gcloud-oauth-token"].(*o2.Token)
-	if !ok {
-		http.Error(w, "Unable to assert token", http.StatusInternalServerError)
-		return
-	}
-	idTokenRaw := token.Extra("id_token")
-	if idTokenRaw == nil {
-		http.Error(w, "Unable to assert id_token", http.StatusInternalServerError)
-		return
-	}
-	idToken, ok := idTokenRaw.(string)
-	if !ok {
-		http.Error(w, "Unable to coerce id_token", http.StatusInternalServerError)
-		return
-	}
-	ctx := context.Background()
-	oauth2Service, err := oauth2.NewService(ctx, option.WithTokenSource(g.OAuthConfig.TokenSource(ctx, token)))
+	token, err := tokenFromSession(session.Values["gcloud-oauth-token"])
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	tokenInfoCall := oauth2Service.Tokeninfo()
-	tokenInfoCall.IdToken(idToken)
-	tokenInfo, err := tokenInfoCall.Do()
-
+	tokenInfo, err := g.getTokenInfo(token)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	g.Tokens.Set(tokenInfo.Email, token.AccessToken)
-	sessionId, ok := session.Values["stateToken"].(string)
-	if !ok {
-		http.Error(w, "Unable to determine sessionId", http.StatusInternalServerError)
-		return
-	}
-	g.Tokens.Set(sessionId, tokenInfo.Email)
 	fmt.Fprintf(w, `<html><body><p>Hi %s! You can close this window now, your shell should be ready.</p></body></html>`, tokenInfo.Email)
 }
 
