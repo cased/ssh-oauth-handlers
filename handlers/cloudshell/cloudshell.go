@@ -15,7 +15,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/cased/ssh-oauth-handlers/types"
 	"github.com/gliderlabs/ssh"
 	"github.com/gorilla/sessions"
 	gossh "golang.org/x/crypto/ssh"
@@ -41,16 +40,15 @@ func init() {
 type CloudShellSSHSessionOauthHandler struct {
 	DefaultCommand []string
 	ShellUrl       string
-	Tokens         types.TokenStore
+	Tokens         map[string]*o2.Token
 	OAuthConfig    *o2.Config
 }
 
 func NewCloudShellSSHSessionOauthHandler(shellUrl string, defaultCommand []string) *CloudShellSSHSessionOauthHandler {
-
 	return &CloudShellSSHSessionOauthHandler{
 		ShellUrl:       shellUrl,
 		DefaultCommand: defaultCommand,
-		Tokens:         types.NewMemoryTokenStore(),
+		Tokens:         make(map[string]*o2.Token),
 		OAuthConfig: &o2.Config{
 			ClientID:     os.Getenv("GCLOUD_OAUTH_CLIENT_ID"),
 			ClientSecret: os.Getenv("GCLOUD_OAUTH_CLIENT_SECRET"),
@@ -66,20 +64,23 @@ func (g *CloudShellSSHSessionOauthHandler) authURLGenerator(sessionID string) st
 }
 
 func (g *CloudShellSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *http.Request) {
-	stateToken := r.URL.Query().Get("stateToken")
-	url := g.OAuthConfig.AuthCodeURL(stateToken, o2.AccessTypeOffline)
+	sessionID := r.URL.Query().Get("stateToken")
 	session, err := store.Get(r, "cased-shell-gcloud")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	session.Values["stateToken"] = stateToken
-	g.Tokens.Set(stateToken, "pending")
+	session.Values["sessionID"] = sessionID
 	if err := session.Save(r, w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, url, http.StatusFound)
+	email, ok := session.Values["email"].(string)
+	if ok && email != "" {
+		http.Redirect(w, r, "/oauth/user", http.StatusFound)
+	} else {
+		http.Redirect(w, r, g.OAuthConfig.AuthCodeURL(sessionID, o2.AccessTypeOffline), http.StatusFound)
+	}
 }
 
 func tokenToIDToken(token *o2.Token) (string, error) {
@@ -92,14 +93,6 @@ func tokenToIDToken(token *o2.Token) (string, error) {
 		return "", errors.New("unable to coerce id_token")
 	}
 	return idToken, nil
-}
-
-func tokenFromSession(value interface{}) (*o2.Token, error) {
-	token, ok := value.(*o2.Token)
-	if !ok {
-		return nil, errors.New("unable to get token from session")
-	}
-	return token, nil
 }
 
 func (g *CloudShellSSHSessionOauthHandler) getTokenInfo(token *o2.Token) (*oauth2.Tokeninfo, error) {
@@ -136,7 +129,7 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWri
 		http.Error(w, r.URL.RequestURI(), http.StatusBadRequest)
 		return
 	}
-	if stateToken != fmt.Sprintf("%s", session.Values["stateToken"]) && g.Tokens.Get(stateToken) != "pending" {
+	if stateToken != fmt.Sprintf("%s", session.Values["sessionID"]) && g.Tokens[stateToken] != nil {
 		http.Error(w, "Invalid State token", http.StatusBadRequest)
 		return
 	}
@@ -152,8 +145,8 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWri
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	g.Tokens.Set(tokenInfo.Email, token.AccessToken)
-	g.Tokens.Set(stateToken, tokenInfo.Email)
+	g.Tokens[tokenInfo.Email] = token
+	session.Values["email"] = tokenInfo.Email
 	if err := session.Save(r, w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -167,17 +160,13 @@ func (g *CloudShellSSHSessionOauthHandler) HandleUser(w http.ResponseWriter, r *
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	token, err := tokenFromSession(session.Values["gcloud-oauth-token"])
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	email, ok := session.Values["email"].(string)
+	if !ok {
+		http.Error(w, "couldn't load account from session", http.StatusInternalServerError)
 		return
 	}
-	tokenInfo, err := g.getTokenInfo(token)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	fmt.Fprintf(w, `<html><body><p>Hi %s! You can close this window now, your shell should be ready.</p></body></html>`, tokenInfo.Email)
+	// TODO validate access to Cloudshell API here
+	fmt.Fprintf(w, `<html><body><p>Hi %s! You can close this window now, your shell should be ready.</p></body></html>`, email)
 }
 
 func getUnexportedField(field reflect.Value) interface{} {
@@ -207,6 +196,11 @@ func (g *CloudShellSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error 
 	return errors.New("command not recognized")
 }
 
+func (g *CloudShellSSHSessionOauthHandler) tokenSourceForSession(sessionID string) o2.TokenSource {
+	token := g.Tokens[sessionID]
+	return o2.ReuseTokenSource(token, g.OAuthConfig.TokenSource(context.Background(), token))
+}
+
 func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
 	if err := g.validateCommand(cmd); err != nil {
 		return err
@@ -215,7 +209,6 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
 	io.WriteString(session, "Login to GCloud: "+g.authURLGenerator(sessionID)+"\n")
-	var accessToken string
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	done := make(chan bool)
@@ -226,19 +219,14 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 	for {
 		select {
 		case <-done:
-			if g.Tokens.Get(sessionID) == "" || g.Tokens.Get(sessionID) == "pending" {
+			if g.Tokens[sessionID] == nil {
 				return errors.New("timeout")
 			}
 		case <-ticker.C:
-			if g.Tokens.Get(sessionID) != "" && g.Tokens.Get(sessionID) != "pending" {
-				email := g.Tokens.Get(sessionID)
-				accessToken = g.Tokens.Get(email)
-				token := &o2.Token{
-					AccessToken: accessToken,
-				}
+			if g.Tokens[sessionID] != nil {
 				io.WriteString(session, "done!\n")
 				ctx := context.Background()
-				c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.OAuthConfig.TokenSource(ctx, token)))
+				c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.tokenSourceForSession(sessionID)))
 				if err != nil {
 					return err
 				}
@@ -254,7 +242,7 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 				// TODO connect to environment
 				io.WriteString(session, fmt.Sprintf("%+v\n", resp))
 				// clear token after using it
-				g.Tokens.Set(sessionID, "")
+				g.Tokens[sessionID] = nil
 				return nil
 			} else {
 				io.WriteString(session, ".")
