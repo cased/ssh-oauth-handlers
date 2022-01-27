@@ -97,7 +97,7 @@ func tokenToIDToken(token *o2.Token) (string, error) {
 func tokenFromSession(value interface{}) (*o2.Token, error) {
 	token, ok := value.(*o2.Token)
 	if !ok {
-		return nil, errors.New("unable to assert id_token")
+		return nil, errors.New("unable to get token from session")
 	}
 	return token, nil
 }
