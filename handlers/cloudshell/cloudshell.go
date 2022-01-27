@@ -139,12 +139,12 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWri
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	session.Values["gcloud-oauth-token"] = token
 	tokenInfo, err := g.getTokenInfo(token)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	g.Tokens[stateToken] = token
 	g.Tokens[tokenInfo.Email] = token
 	session.Values["email"] = tokenInfo.Email
 	if err := session.Save(r, w); err != nil {
