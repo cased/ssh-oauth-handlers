@@ -67,7 +67,7 @@ func (g *CloudShellSSHSessionOauthHandler) authURLGenerator(sessionID string) st
 
 func (g *CloudShellSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *http.Request) {
 	stateToken := r.URL.Query().Get("stateToken")
-	url := g.OAuthConfig.AuthCodeURL(stateToken)
+	url := g.OAuthConfig.AuthCodeURL(stateToken, o2.AccessTypeOffline)
 	session, err := store.Get(r, "cased-shell-gcloud")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
