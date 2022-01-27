@@ -1,4 +1,4 @@
-package GCloud
+package cloudshell
 
 import (
 	"context"
@@ -38,16 +38,16 @@ func init() {
 	store.MaxAge(60 * 60 * 8)
 }
 
-type GCloudSSHSessionOauthHandler struct {
+type CloudShellSSHSessionOauthHandler struct {
 	DefaultCommand []string
 	ShellUrl       string
 	Tokens         types.TokenStore
 	OAuthConfig    *o2.Config
 }
 
-func NewGCloudSSHSessionOauthHandler(shellUrl string, defaultCommand []string) *GCloudSSHSessionOauthHandler {
+func NewCloudShellSSHSessionOauthHandler(shellUrl string, defaultCommand []string) *CloudShellSSHSessionOauthHandler {
 
-	return &GCloudSSHSessionOauthHandler{
+	return &CloudShellSSHSessionOauthHandler{
 		ShellUrl:       shellUrl,
 		DefaultCommand: defaultCommand,
 		Tokens:         types.NewMemoryTokenStore(),
@@ -61,11 +61,11 @@ func NewGCloudSSHSessionOauthHandler(shellUrl string, defaultCommand []string) *
 	}
 }
 
-func (g *GCloudSSHSessionOauthHandler) authURLGenerator(sessionID string) string {
+func (g *CloudShellSSHSessionOauthHandler) authURLGenerator(sessionID string) string {
 	return fmt.Sprintf("%s/oauth/auth?stateToken=%s", g.ShellUrl, sessionID)
 }
 
-func (g *GCloudSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *http.Request) {
+func (g *CloudShellSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *http.Request) {
 	stateToken := r.URL.Query().Get("stateToken")
 	url := g.OAuthConfig.AuthCodeURL(stateToken)
 	session, err := store.Get(r, "cased-shell-gcloud")
@@ -82,7 +82,7 @@ func (g *GCloudSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *http
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
-func (g *GCloudSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
+func (g *CloudShellSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	session, err := store.Get(r, "cased-shell-gcloud")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -110,10 +110,9 @@ func (g *GCloudSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWriter,
 		return
 	}
 	http.Redirect(w, r, "/oauth/user", http.StatusFound)
-
 }
 
-func (g *GCloudSSHSessionOauthHandler) HandleUser(w http.ResponseWriter, r *http.Request) {
+func (g *CloudShellSSHSessionOauthHandler) HandleUser(w http.ResponseWriter, r *http.Request) {
 	session, err := store.Get(r, "cased-shell-gcloud")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -175,7 +174,7 @@ func Equal(a, b []string) bool {
 	return true
 }
 
-func (g *GCloudSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error {
+func (g *CloudShellSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error {
 	log.Printf("validating command: %+v", cmd.Args)
 	if cmd.Args[0] == "gcloud" {
 		return nil
@@ -186,7 +185,7 @@ func (g *GCloudSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error {
 	return errors.New("command not recognized")
 }
 
-func (g *GCloudSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
+func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
 	if err := g.validateCommand(cmd); err != nil {
 		return err
 	}
