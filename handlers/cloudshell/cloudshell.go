@@ -76,7 +76,8 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *
 		return
 	}
 	email, ok := session.Values["email"].(string)
-	if ok && email != "" {
+	if ok && email != "" && g.Tokens[email] != nil {
+		g.Tokens[sessionID] = g.Tokens[email]
 		http.Redirect(w, r, "/oauth/user", http.StatusFound)
 	} else {
 		http.Redirect(w, r, g.OAuthConfig.AuthCodeURL(sessionID, o2.AccessTypeOffline), http.StatusFound)
