@@ -49,13 +49,14 @@ func (h *CasedShellSSHHandler) casedShellIsUserAuthority(providedPubKey gossh.Pu
 }
 
 func (h *CasedShellSSHHandler) CasedShellPublicKeyHandler(ctx ssh.Context, pubKey ssh.PublicKey) bool {
+	sessionID := ctx.SessionID()
 	cert, ok := pubKey.(*gossh.Certificate)
 	if !ok {
-		log.Println("normal key pairs not accepted")
+		log.Printf("%s: normal key pairs not accepted\n", sessionID)
 		return false
 	}
 	if cert.CertType != gossh.UserCert {
-		log.Printf("cert has type %d\n", cert.CertType)
+		log.Printf("%s: cert has type %d\n", sessionID, cert.CertType)
 		return false
 	}
 	c := &gossh.CertChecker{
@@ -63,28 +64,28 @@ func (h *CasedShellSSHHandler) CasedShellPublicKeyHandler(ctx ssh.Context, pubKe
 	}
 
 	if !c.IsUserAuthority(cert.SignatureKey) {
-		log.Println("certificate signed by unrecognized authority")
+		log.Printf("%s: certificate signed by unrecognized authority\n", sessionID)
 		return false
 	}
 
 	resp, err := http.Get(fmt.Sprintf("%s/principal.txt", h.ShellUrl))
 	if err != nil || resp.StatusCode != 200 {
-		log.Println("error contacting shell")
+		log.Printf("%s: error contacting shell\n", sessionID)
 		return false
 	}
 	principal, _ := io.ReadAll(resp.Body)
 
 	if err := c.CheckCert(string(principal), cert); err != nil {
-		log.Printf("%s not in list of valid principals %v\n", string(principal), cert.ValidPrincipals)
+		log.Printf("%s: %s not in list of valid principals %v\n", sessionID, string(principal), cert.ValidPrincipals)
 		return false
 	}
 
 	if cert.Permissions.CriticalOptions["force-command"] != "" {
-		log.Printf("invalid force-command: %s\n", cert.Permissions.CriticalOptions["force-command"])
+		log.Printf("%s: invalid force-command: %s\n", sessionID, cert.Permissions.CriticalOptions["force-command"])
 		return false
 	}
 
-	log.Printf("accepted SSH Certificate from %s\n", cert.ValidPrincipals[0])
+	log.Printf("%s: accepted SSH Certificate from %s\n", sessionID, cert.ValidPrincipals[0])
 
 	return true
 }
@@ -96,6 +97,9 @@ func failAndExit(s ssh.Session, err string) {
 }
 
 func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.SSHSessionOauthHandler, command []string) ssh.Handler {
+	if command == nil {
+		return handler.SessionHandler
+	}
 	return func(s ssh.Session) {
 		log.Printf("accepted connection for user %s\n", s.User())
 		var args []string

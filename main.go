@@ -31,7 +31,7 @@ func main() {
 	case "heroku":
 		handler = heroku.NewHerokuSSHSessionOauthHandler(shellUrl, cmd)
 	case "cloudshell":
-		handler = cloudshell.NewCloudShellSSHSessionOauthHandler(shellUrl, cmd)
+		handler = cloudshell.NewCloudShellSSHSessionOauthHandler(shellUrl, nil)
 	default:
 		usage()
 	}

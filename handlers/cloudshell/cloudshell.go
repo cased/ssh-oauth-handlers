@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -186,30 +185,28 @@ func Equal(a, b []string) bool {
 	return true
 }
 
-func (g *CloudShellSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error {
-	log.Printf("validating command: %+v", cmd.Args)
-	if cmd.Args[0] == "gcloud" {
-		return nil
-	}
-	if Equal(cmd.Args, g.DefaultCommand) {
-		return nil
-	}
-	return errors.New("command not recognized")
-}
-
 func (g *CloudShellSSHSessionOauthHandler) tokenSourceForSession(sessionID string) o2.TokenSource {
 	token := g.Tokens[sessionID]
 	return o2.ReuseTokenSource(token, g.OAuthConfig.TokenSource(context.Background(), token))
 }
 
 func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
-	if err := g.validateCommand(cmd); err != nil {
-		return err
-	}
+	return errors.New("not implemented, Cloud Run can't run a modern shell")
+}
 
+func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
-	io.WriteString(session, "Login to GCloud: "+g.authURLGenerator(sessionID)+"\n")
+
+	cert, ok := session.PublicKey().(*gossh.Certificate)
+	if !ok {
+		io.WriteString(session, fmt.Sprintf("%s: normal key pairs not accepted\n", sessionID))
+		session.Exit(1)
+		return
+	}
+	io.WriteString(session, fmt.Sprintf("%s: Greetings %s\n", sessionID, cert.ValidPrincipals[0]))
+	io.WriteString(session, fmt.Sprintf("%s: Cert details %+v\n", sessionID, cert))
+	io.WriteString(session, fmt.Sprintf("%s: Login to GCloud: %s\n ", sessionID, g.authURLGenerator(sessionID)))
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	done := make(chan bool)
@@ -221,7 +218,9 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 		select {
 		case <-done:
 			if g.Tokens[sessionID] == nil {
-				return errors.New("timeout")
+				io.WriteString(session, "timeout")
+				session.Exit(1)
+				return
 			}
 		case <-ticker.C:
 			if g.Tokens[sessionID] != nil {
@@ -229,7 +228,9 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 				ctx := context.Background()
 				c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.tokenSourceForSession(sessionID)))
 				if err != nil {
-					return err
+					io.WriteString(session, err.Error())
+					session.Exit(1)
+					return
 				}
 				defer c.Close()
 
@@ -238,13 +239,15 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 				}
 				resp, err := c.GetEnvironment(ctx, req)
 				if err != nil {
-					return err
+					io.WriteString(session, err.Error())
+					session.Exit(1)
+					return
 				}
 				// TODO connect to environment
 				io.WriteString(session, fmt.Sprintf("%+v\n", resp))
 				// clear token after using it
 				g.Tokens[sessionID] = nil
-				return nil
+				session.Exit(0)
 			} else {
 				io.WriteString(session, ".")
 			}

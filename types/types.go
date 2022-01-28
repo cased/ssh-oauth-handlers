@@ -35,4 +35,5 @@ type SSHSessionOauthHandler interface {
 	HandleAuthCallback(w http.ResponseWriter, r *http.Request)
 	HandleUser(w http.ResponseWriter, r *http.Request)
 	SSHSessionCommandHandler(ssh.Session, *exec.Cmd) error
+	SessionHandler(ssh.Session)
 }

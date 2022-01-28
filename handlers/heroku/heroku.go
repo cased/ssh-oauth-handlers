@@ -163,6 +163,10 @@ func (h *HerokuSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error {
 	return errors.New("command not recognized")
 }
 
+func (h *HerokuSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
+	// noop
+}
+
 func (h *HerokuSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
 	if err := h.validateCommand(cmd); err != nil {
 		return err
