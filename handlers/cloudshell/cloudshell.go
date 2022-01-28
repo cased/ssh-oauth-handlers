@@ -23,6 +23,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/oauth2/v2"
 	"google.golang.org/api/option"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	shell "cloud.google.com/go/shell/apiv1"
 	shellpb "google.golang.org/genproto/googleapis/cloud/shell/v1"
@@ -153,8 +154,8 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWri
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	g.SessionEmails.Set(stateToken, tokenInfo.Email)
 	g.OAuth2TokenStore.Set(tokenInfo.Email, token)
+	g.SessionEmails.Set(stateToken, tokenInfo.Email)
 	session.Values["email"] = tokenInfo.Email
 	if err := session.Save(r, w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -232,51 +233,42 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	io.WriteString(session, fmt.Sprintf("%s: Greetings %s\n", sessionID, cert.ValidPrincipals[0]))
 	io.WriteString(session, fmt.Sprintf("%s: Cert details %+v\n", sessionID, cert))
 	io.WriteString(session, fmt.Sprintf("%s: Login to GCloud: %s\n ", sessionID, g.authURLGenerator(sessionID)))
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	done := make(chan bool)
-	go func() {
-		time.Sleep(45 * time.Second)
-		done <- true
-	}()
-	for {
-		select {
-		case <-done:
-			if g.SessionEmails.Get(sessionID) == "" {
-				io.WriteString(session, "timeout")
-				session.Exit(1)
-				return
-			}
-		case <-ticker.C:
-			if g.SessionEmails.Get(sessionID) != "" {
-				io.WriteString(session, "done!\n")
-				ctx := context.Background()
-				c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.tokenSourceForSession(sessionID)))
-				if err != nil {
-					io.WriteString(session, err.Error())
-					session.Exit(1)
-					return
-				}
-				defer c.Close()
-
-				req := &shellpb.GetEnvironmentRequest{
-					Name: "users/me/environments/default",
-				}
-				resp, err := c.GetEnvironment(ctx, req)
-				if err != nil {
-					io.WriteString(session, err.Error())
-					session.Exit(1)
-					return
-				}
-				// TODO connect to environment
-				io.WriteString(session, fmt.Sprintf("%+v\n", resp))
-				// ensure session is marked as closed
-				g.SessionEmails.Set(sessionID, "")
-				session.Exit(0)
-			} else {
-				io.WriteString(session, ".")
-			}
-
+	err := wait.PollImmediate(1, 45*time.Second, func() (bool, error) {
+		email := g.SessionEmails.Get(sessionID)
+		if g.SessionEmails.Get(sessionID) == "" {
+			io.WriteString(session, ".")
+			return false, nil
+		} else {
+			io.WriteString(session, fmt.Sprintf("%s: session authorized as %s\n", sessionID, email))
+			return true, nil
 		}
+	})
+	if err != nil {
+		io.WriteString(session, err.Error())
+		session.Exit(1)
+		return
 	}
+	ctx := context.Background()
+	c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.tokenSourceForSession(sessionID)))
+	if err != nil {
+		io.WriteString(session, err.Error())
+		session.Exit(1)
+		return
+	}
+	defer c.Close()
+
+	req := &shellpb.GetEnvironmentRequest{
+		Name: "users/me/environments/default",
+	}
+	resp, err := c.GetEnvironment(ctx, req)
+	if err != nil {
+		io.WriteString(session, err.Error())
+		session.Exit(1)
+		return
+	}
+	// TODO connect to environment
+	io.WriteString(session, fmt.Sprintf("%+v\n", resp))
+	// ensure session is marked as closed
+	g.SessionEmails.Set(sessionID, "")
+	session.Exit(0)
 }
