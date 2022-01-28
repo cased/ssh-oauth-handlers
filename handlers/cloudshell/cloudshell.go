@@ -87,7 +87,7 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuth(w http.ResponseWriter, r *
 	}
 	tokenSource := g.OAuth2TokenStore.Get(email)
 	if tokenSource == nil {
-		http.Redirect(w, r, g.OAuthConfig.AuthCodeURL(sessionID, o2.AccessTypeOffline), http.StatusFound)
+		http.Redirect(w, r, g.OAuthConfig.AuthCodeURL(sessionID, o2.AccessTypeOffline, o2.SetAuthURLParam("login_hint", email)), http.StatusFound)
 		return
 	}
 	http.Redirect(w, r, "/oauth/user", http.StatusFound)
@@ -139,7 +139,7 @@ func (g *CloudShellSSHSessionOauthHandler) HandleAuthCallback(w http.ResponseWri
 		http.Error(w, r.URL.RequestURI(), http.StatusBadRequest)
 		return
 	}
-	if stateToken != fmt.Sprintf("%s", session.Values["sessionID"]) && g.SessionEmails.Get(stateToken) != "" {
+	if stateToken != fmt.Sprintf("%s", session.Values["sessionID"]) {
 		http.Error(w, "Invalid State token", http.StatusBadRequest)
 		return
 	}
@@ -195,11 +195,6 @@ func Equal(a, b []string) bool {
 	return true
 }
 
-func (g *CloudShellSSHSessionOauthHandler) tokenSourceForSession(sessionID string) o2.TokenSource {
-	email := g.SessionEmails.Get(sessionID)
-	return g.OAuth2TokenStore.Get(email)
-}
-
 func (g *CloudShellSSHSessionOauthHandler) DefaultCommand() []string {
 	return nil
 }
@@ -217,6 +212,9 @@ func logAndPrint(session ssh.Session, msg string, a ...interface{}) {
 }
 
 func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
+	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
+	sessionID := hex.EncodeToString(conn.SessionID())
+
 	if session.Command() != nil {
 		logAndPrint(session, "ignoring command: %s", session.Command())
 		session.Exit(1)
@@ -236,29 +234,29 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 		session.Exit(1)
 		return
 	}
-	logAndPrint(session, fmt.Sprintf("greetings %s", cert.ValidPrincipals[0]))
-	logAndPrint(session, fmt.Sprintf("cert details: +%v", cert))
-
-	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
-	sessionID := hex.EncodeToString(conn.SessionID())
-	logAndPrint(session, fmt.Sprintf("login: %s", g.authURLGenerator(sessionID)))
-	err := wait.PollImmediate(1, 45*time.Second, func() (bool, error) {
-		email := g.SessionEmails.Get(sessionID)
-		if g.SessionEmails.Get(sessionID) == "" {
-			io.WriteString(session, ".")
-			return false, nil
-		} else {
-			logAndPrint(session, fmt.Sprintf("authorized as %s", email))
-			return true, nil
+	logAndPrint(session, fmt.Sprintf("cert keyID: %s", cert.KeyId))
+	if g.OAuth2TokenStore.Get(cert.ValidPrincipals[0]) != nil {
+		logAndPrint(session, "found cached credentials for %s", cert.ValidPrincipals[0])
+	} else {
+		logAndPrint(session, fmt.Sprintf("login: %s", g.authURLGenerator(sessionID)))
+		err := wait.PollImmediate(1*time.Second, 45*time.Second, func() (bool, error) {
+			email := g.SessionEmails.Get(sessionID)
+			if g.SessionEmails.Get(sessionID) == "" {
+				io.WriteString(session, ".")
+				return false, nil
+			} else {
+				logAndPrint(session, fmt.Sprintf("authorized as %s", email))
+				return true, nil
+			}
+		})
+		if err != nil {
+			logAndPrint(session, err.Error())
+			session.Exit(1)
+			return
 		}
-	})
-	if err != nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
-		return
 	}
 	ctx := context.Background()
-	c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.tokenSourceForSession(sessionID)))
+	c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.OAuth2TokenStore.Get(cert.ValidPrincipals[0])))
 	if err != nil {
 		logAndPrint(session, err.Error())
 		session.Exit(1)
