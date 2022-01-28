@@ -217,6 +217,11 @@ func logAndPrint(session ssh.Session, msg string, a ...interface{}) {
 }
 
 func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
+	if session.Command() != nil {
+		logAndPrint(session, "ignoring command: %s", session.Command())
+		session.Exit(1)
+		return
+	}
 	_, winCh, isPty := session.Pty()
 
 	if !isPty {
