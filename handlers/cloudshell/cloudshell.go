@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -209,6 +210,18 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
+
+	_, winCh, isPty := session.Pty()
+
+	if !isPty {
+		session.Exit(1)
+		return
+	}
+	go func() {
+		for win := range winCh {
+			log.Printf("%s: ignoring window change: %+v\n", sessionID, win)
+		}
+	}()
 
 	cert, ok := session.PublicKey().(*gossh.Certificate)
 	if !ok {
