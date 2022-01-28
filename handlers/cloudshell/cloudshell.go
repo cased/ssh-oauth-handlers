@@ -37,17 +37,15 @@ func init() {
 }
 
 type CloudShellSSHSessionOauthHandler struct {
-	DefaultCommand []string
-	ShellUrl       string
-	Tokens         map[string]*o2.Token
-	OAuthConfig    *o2.Config
+	ShellUrl    string
+	Tokens      map[string]*o2.Token
+	OAuthConfig *o2.Config
 }
 
 func NewCloudShellSSHSessionOauthHandler(shellUrl string, defaultCommand []string) *CloudShellSSHSessionOauthHandler {
 	return &CloudShellSSHSessionOauthHandler{
-		ShellUrl:       shellUrl,
-		DefaultCommand: defaultCommand,
-		Tokens:         make(map[string]*o2.Token),
+		ShellUrl: shellUrl,
+		Tokens:   make(map[string]*o2.Token),
 		OAuthConfig: &o2.Config{
 			ClientID:     os.Getenv("GCLOUD_OAUTH_CLIENT_ID"),
 			ClientSecret: os.Getenv("GCLOUD_OAUTH_CLIENT_SECRET"),
@@ -188,6 +186,10 @@ func Equal(a, b []string) bool {
 func (g *CloudShellSSHSessionOauthHandler) tokenSourceForSession(sessionID string) o2.TokenSource {
 	token := g.Tokens[sessionID]
 	return o2.ReuseTokenSource(token, g.OAuthConfig.TokenSource(context.Background(), token))
+}
+
+func (g *CloudShellSSHSessionOauthHandler) DefaultCommand() []string {
+	return nil
 }
 
 func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {

@@ -34,7 +34,7 @@ func init() {
 }
 
 type HerokuSSHSessionOauthHandler struct {
-	DefaultCommand []string
+	defaultCommand []string
 	ShellUrl       string
 	Tokens         types.TokenStore
 	OAuthConfig    *oauth2.Config
@@ -43,7 +43,7 @@ type HerokuSSHSessionOauthHandler struct {
 func NewHerokuSSHSessionOauthHandler(shellUrl string, defaultCommand []string) *HerokuSSHSessionOauthHandler {
 	return &HerokuSSHSessionOauthHandler{
 		ShellUrl:       shellUrl,
-		DefaultCommand: defaultCommand,
+		defaultCommand: defaultCommand,
 		Tokens:         types.NewMemoryTokenStore(),
 		OAuthConfig: &oauth2.Config{
 			ClientID:     os.Getenv("HEROKU_OAUTH_ID"),
@@ -56,6 +56,10 @@ func NewHerokuSSHSessionOauthHandler(shellUrl string, defaultCommand []string) *
 			RedirectURL: shellUrl + "/oauth/auth/callback",
 		},
 	}
+}
+
+func (h *HerokuSSHSessionOauthHandler) DefaultCommand() []string {
+	return h.defaultCommand
 }
 
 func (h *HerokuSSHSessionOauthHandler) authURLGenerator(sessionID string) string {
@@ -157,7 +161,7 @@ func (h *HerokuSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error {
 	if cmd.Args[0] == "heroku" {
 		return nil
 	}
-	if Equal(cmd.Args, h.DefaultCommand) {
+	if Equal(cmd.Args, h.defaultCommand) {
 		return nil
 	}
 	return errors.New("command not recognized")

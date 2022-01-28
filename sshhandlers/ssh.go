@@ -96,8 +96,8 @@ func failAndExit(s ssh.Session, err string) {
 	s.Exit(1)
 }
 
-func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.SSHSessionOauthHandler, command []string) ssh.Handler {
-	if command == nil {
+func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.SSHSessionOauthHandler) ssh.Handler {
+	if handler.DefaultCommand() == nil {
 		return handler.SessionHandler
 	}
 	return func(s ssh.Session) {
@@ -106,7 +106,7 @@ func (h *CasedShellSSHHandler) CasedShellSessionHandler(handler types.SSHSession
 		if len(s.Command()) > 0 {
 			args = s.Command()
 		} else {
-			args = command
+			args = handler.DefaultCommand()
 		}
 
 		ptyReq, winCh, isPty := s.Pty()

@@ -34,6 +34,8 @@ type SSHSessionOauthHandler interface {
 	HandleAuth(w http.ResponseWriter, r *http.Request)
 	HandleAuthCallback(w http.ResponseWriter, r *http.Request)
 	HandleUser(w http.ResponseWriter, r *http.Request)
+	// Return nil to call SessionHandler directly
+	DefaultCommand() []string
 	SSHSessionCommandHandler(ssh.Session, *exec.Cmd) error
 	SessionHandler(ssh.Session)
 }
