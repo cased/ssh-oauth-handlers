@@ -208,50 +208,54 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 	return errors.New("not implemented, Cloud Run can't run a modern shell")
 }
 
-func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
+func logAndPrint(session ssh.Session, msg string, a ...interface{}) {
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
+	msgWithSessionID := fmt.Sprintf("%s: "+msg, sessionID, a)
+	log.Println(msgWithSessionID)
+	io.WriteString(session, msgWithSessionID+"\n")
+}
 
+func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	_, winCh, isPty := session.Pty()
 
 	if !isPty {
 		session.Exit(1)
 		return
 	}
-	go func() {
-		for win := range winCh {
-			log.Printf("%s: ignoring window change: %+v\n", sessionID, win)
-		}
-	}()
+	logAndPrint(session, "started pty")
 
 	cert, ok := session.PublicKey().(*gossh.Certificate)
 	if !ok {
-		io.WriteString(session, fmt.Sprintf("%s: normal key pairs not accepted\n", sessionID))
+		logAndPrint(session, "can't assert certificate")
 		session.Exit(1)
 		return
 	}
-	io.WriteString(session, fmt.Sprintf("%s: Greetings %s\n", sessionID, cert.ValidPrincipals[0]))
-	io.WriteString(session, fmt.Sprintf("%s: Cert details %+v\n", sessionID, cert))
-	io.WriteString(session, fmt.Sprintf("%s: Login to GCloud: %s\n ", sessionID, g.authURLGenerator(sessionID)))
+	logAndPrint(session, fmt.Sprintf("greetings %s", cert.ValidPrincipals[0]))
+	logAndPrint(session, fmt.Sprintf("cert details: +%v", cert))
+
+	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
+	sessionID := hex.EncodeToString(conn.SessionID())
+	logAndPrint(session, fmt.Sprintf("login: %s", g.authURLGenerator(sessionID)))
 	err := wait.PollImmediate(1, 45*time.Second, func() (bool, error) {
 		email := g.SessionEmails.Get(sessionID)
 		if g.SessionEmails.Get(sessionID) == "" {
 			io.WriteString(session, ".")
 			return false, nil
 		} else {
-			io.WriteString(session, fmt.Sprintf("%s: session authorized as %s\n", sessionID, email))
+			logAndPrint(session, fmt.Sprintf("authorized as %s", email))
 			return true, nil
 		}
 	})
 	if err != nil {
-		io.WriteString(session, err.Error())
+		logAndPrint(session, err.Error())
 		session.Exit(1)
 		return
 	}
 	ctx := context.Background()
 	c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.tokenSourceForSession(sessionID)))
 	if err != nil {
-		io.WriteString(session, err.Error())
+		logAndPrint(session, err.Error())
 		session.Exit(1)
 		return
 	}
@@ -262,12 +266,18 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	}
 	resp, err := c.GetEnvironment(ctx, req)
 	if err != nil {
-		io.WriteString(session, err.Error())
+		logAndPrint(session, err.Error())
 		session.Exit(1)
 		return
 	}
-	// TODO connect to environment
-	io.WriteString(session, fmt.Sprintf("%+v\n", resp))
+	logAndPrint(session, fmt.Sprintf("%+v\n", resp))
+
+	go func() {
+		for win := range winCh {
+			log.Printf("%s: ignoring window change: %+v\n", sessionID, win)
+		}
+	}()
+
 	// ensure session is marked as closed
 	g.SessionEmails.Set(sessionID, "")
 	session.Exit(0)
