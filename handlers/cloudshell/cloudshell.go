@@ -214,10 +214,6 @@ func logAndPrintInternal(session ssh.Session, msg string, skip int) {
 	io.WriteString(session, msgWithSessionID+"\n")
 }
 
-func logAndPrint(session ssh.Session, msg string) {
-	logAndPrintInternal(session, msg, 2)
-}
-
 func logAndFail(session ssh.Session, msg string) {
 	logAndPrintInternal(session, msg, 2)
 	session.Exit(1)
@@ -299,16 +295,6 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 			err := cloudShell.WindowChange(win.Width, win.Height)
 			io.WriteString(session, fmt.Sprintf("%s\n", err.Error()))
 		}
-	}()
-
-	go func() {
-		io.Copy(stdIn, session)
-	}()
-	go func() {
-		io.Copy(session, stdOut)
-	}()
-	go func() {
-		io.Copy(session.Stderr(), stdErr)
 	}()
 
 	err = cloudShell.Wait()
