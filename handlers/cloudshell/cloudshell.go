@@ -279,7 +279,6 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 
 	logAndPrint(session, "started pty")
 	modes := gossh.TerminalModes{
-		gossh.ECHO:          0,     // disable echoing
 		gossh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
 		gossh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
 	}
@@ -326,7 +325,7 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 		io.Copy(session, stdOut)
 	}()
 	go func() {
-		io.Copy(session, stdErr)
+		io.Copy(session.Stderr(), stdErr)
 	}()
 
 	err = cloudShell.Wait()
