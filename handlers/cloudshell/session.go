@@ -89,7 +89,8 @@ func (css *cloudShellSession) Connect() (*gossh.Session, error) {
 	return css.cloudShellSession, nil
 }
 
-func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environment, err error) {
+func (css *cloudShellSession) preparedCloudShell() (*shellpb.Environment, error) {
+	var err error
 	css.cloudShell, err = css.cloudShellClient.GetEnvironment(css.ctx, &shellpb.GetEnvironmentRequest{
 		Name: "users/me/environments/default",
 	})
@@ -102,7 +103,7 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 			return nil, fmt.Errorf("couldn't obtain token: %w", err)
 		}
 		req := &shellpb.StartEnvironmentRequest{
-			Name:        cloudShell.Name,
+			Name:        css.cloudShell.Name,
 			AccessToken: token.AccessToken,
 		}
 		op, err := css.cloudShellClient.StartEnvironment(css.ctx, req)
@@ -120,7 +121,7 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 		css.cloudShell = resp.GetEnvironment()
 	}
 	req := &shellpb.AddPublicKeyRequest{
-		Environment: cloudShell.Name,
+		Environment: css.cloudShell.Name,
 		Key:         css.publicKey,
 	}
 	op, err := css.cloudShellClient.AddPublicKey(css.ctx, req)
@@ -136,7 +137,7 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 		return nil, fmt.Errorf("couldn't refresh op: %w", err)
 	}
 	css.cloudShell, err = css.cloudShellClient.GetEnvironment(css.ctx, &shellpb.GetEnvironmentRequest{
-		Name: cloudShell.Name,
+		Name: css.cloudShell.Name,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't read environment: %w", err)
