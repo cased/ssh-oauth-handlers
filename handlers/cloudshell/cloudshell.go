@@ -241,7 +241,7 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	email := cert.ValidPrincipals[0]
 	tokenSource := g.OAuth2TokenStore.Get(email)
 	if tokenSource == nil {
-		logAndPrint(session, fmt.Sprintf("login: %s", g.authURLGenerator(sessionID)))
+		io.WriteString(session, g.authURLGenerator(sessionID)+"\n")
 		err := wait.PollImmediate(1*time.Second, 45*time.Second, func() (bool, error) {
 			tokenSource = g.OAuth2TokenStore.Get(email)
 			if tokenSource == nil {
@@ -271,18 +271,13 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	}
 	defer cloudShell.Close()
 
-	ptyReq, winCh, isPty := session.Pty()
+	_, winCh, isPty := session.Pty()
 	if !isPty {
 		session.Exit(1)
 		return
 	}
 
-	logAndPrint(session, "started pty")
-	modes := gossh.TerminalModes{
-		gossh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
-		gossh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
-	}
-	err = cloudShell.RequestPty(ptyReq.Term, ptyReq.Window.Width, ptyReq.Window.Height, modes)
+	err = cloudShell.RequestPty("vt100", 80, 40, gossh.TerminalModes{})
 	if err != nil {
 		logAndFail(session, err.Error())
 		return
