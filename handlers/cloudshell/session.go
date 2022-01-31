@@ -19,6 +19,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	shellpb "google.golang.org/genproto/googleapis/cloud/shell/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type CloudShellSession interface {
@@ -98,14 +99,13 @@ func (css *cloudShellSession) preparedCloudShell() (*shellpb.Environment, error)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't read environment: %w", err)
 	}
+	token, err := css.tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't obtain token: %w", err)
+	}
 	if css.cloudShell.State != shellpb.Environment_RUNNING {
-		token, err := css.tokenSource.Token()
-		if err != nil {
-			return nil, fmt.Errorf("couldn't obtain token: %w", err)
-		}
 		req := &shellpb.StartEnvironmentRequest{
-			Name:        css.cloudShell.Name,
-			AccessToken: token.AccessToken,
+			Name: css.cloudShell.Name,
 		}
 		op, err := css.cloudShellClient.StartEnvironment(css.ctx, req)
 		if err != nil {
@@ -121,22 +121,46 @@ func (css *cloudShellSession) preparedCloudShell() (*shellpb.Environment, error)
 		}
 		css.cloudShell = resp.GetEnvironment()
 	}
-	req := &shellpb.AddPublicKeyRequest{
-		Environment: css.cloudShell.Name,
-		Key:         css.publicKey,
-	}
-	op, err := css.cloudShellClient.AddPublicKey(css.ctx, req)
-	if err != nil {
-		if e, ok := err.(*googleapi.Error); ok {
-			return nil, fmt.Errorf("couldn't AddPublicKey (%+v): %+v: %w", req, e, err)
-		} else {
-			return nil, fmt.Errorf("couldn't AddPublicKey (%+v): %w", req, err)
+	{
+		req := &shellpb.AddPublicKeyRequest{
+			Environment: css.cloudShell.Name,
+			Key:         css.publicKey,
+		}
+
+		op, err := css.cloudShellClient.AddPublicKey(css.ctx, req)
+		if err != nil {
+			if e, ok := err.(*googleapi.Error); ok {
+				return nil, fmt.Errorf("couldn't AddPublicKey (%+v): %+v: %w", req, e, err)
+			} else {
+				return nil, fmt.Errorf("couldn't AddPublicKey (%+v): %w", req, err)
+			}
+		}
+		_, err = op.Wait(css.ctx)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't refresh op: %w", err)
 		}
 	}
-	_, err = op.Wait(css.ctx)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't refresh op: %w", err)
+	{
+		req := &shellpb.AuthorizeEnvironmentRequest{
+			Name:        css.cloudShell.Name,
+			AccessToken: token.AccessToken,
+			IdToken:     token.Extra("id_token").(string),
+			ExpireTime:  timestamppb.New(token.Expiry),
+		}
+		op, err := css.cloudShellClient.AuthorizeEnvironment(css.ctx, req)
+		if err != nil {
+			if e, ok := err.(*googleapi.Error); ok {
+				return nil, fmt.Errorf("couldn't AuthorizeEnvironment (%+v): %+v: %w", req, e, err)
+			} else {
+				return nil, fmt.Errorf("couldn't AuthorizeEnvironment (%+v): %w", req, err)
+			}
+		}
+		_, err = op.Wait(css.ctx)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't refresh op: %w", err)
+		}
 	}
+
 	css.cloudShell, err = css.cloudShellClient.GetEnvironment(css.ctx, &shellpb.GetEnvironmentRequest{
 		Name: css.cloudShell.Name,
 	})
