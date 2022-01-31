@@ -267,9 +267,9 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	}
 	defer cloudShell.Close()
 
-	cloudShell.Stdin = session
-	cloudShell.Stdout = session
-	cloudShell.Stderr = session
+	go io.Copy(session, cloudShell.Stdin)
+	go io.Copy(cloudShell.Stdout, session)
+	go io.Copy(cloudShell.Stderr, session)
 
 	ptyReq, winCh, isPty := session.Pty()
 	if !isPty {
