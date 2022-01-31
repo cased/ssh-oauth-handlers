@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"time"
 	"unsafe"
 
@@ -34,8 +36,6 @@ func init() {
 	gob.Register(&o2.Token{})
 
 	store.MaxAge(60 * 60 * 8)
-
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
 type CloudShellSSHSessionOauthHandler struct {
@@ -202,16 +202,24 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 	return errors.New("not implemented, Cloud Run can't run a modern shell")
 }
 
-func logAndPrint(session ssh.Session, msg string) {
+func logAndPrintInternal(session ssh.Session, msg string, skip int) {
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
-	sessionID := hex.EncodeToString(conn.SessionID())
-	msgWithSessionID := fmt.Sprintf("%s: "+msg, sessionID)
-	log.Println(msgWithSessionID)
+	msgWithSessionID := fmt.Sprintf("%s: "+msg, conn.SessionID())
+	_, file, no, ok := runtime.Caller(skip)
+	if ok {
+		log.Println(fmt.Sprintf("%s:%d: %s", filepath.Base(file), no, msgWithSessionID))
+	} else {
+		log.Println(msgWithSessionID)
+	}
 	io.WriteString(session, msgWithSessionID+"\n")
 }
 
+func logAndPrint(session ssh.Session, msg string) {
+	logAndPrintInternal(session, msg, 2)
+}
+
 func logAndFail(session ssh.Session, msg string) {
-	logAndPrint(session, msg)
+	logAndPrintInternal(session, msg, 2)
 	session.Exit(1)
 }
 
@@ -229,6 +237,8 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 		logAndFail(session, "can't assert certificate")
 		return
 	}
+	logAndPrint(session, fmt.Sprintf("keyID: %s", cert.KeyId))
+
 	email := cert.ValidPrincipals[0]
 	tokenSource := g.OAuth2TokenStore.Get(email)
 	if tokenSource == nil {
