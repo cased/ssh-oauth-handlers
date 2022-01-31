@@ -237,7 +237,6 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 		logAndFail(session, "can't assert certificate")
 		return
 	}
-	logAndPrint(session, fmt.Sprintf("keyID: %s", cert.KeyId))
 
 	email := cert.ValidPrincipals[0]
 	tokenSource := g.OAuth2TokenStore.Get(email)
