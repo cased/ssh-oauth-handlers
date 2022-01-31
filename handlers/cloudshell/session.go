@@ -72,8 +72,8 @@ func (css *cloudShellSession) Connect() (*gossh.Session, error) {
 
 	user, host, port := cloudShell.SshUsername, cloudShell.SshHost, cloudShell.SshPort
 	config := &gossh.ClientConfig{
-		User: user,
-		// HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		User:            user,
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 		Auth: []gossh.AuthMethod{
 			gossh.PublicKeys(key),
 		},
