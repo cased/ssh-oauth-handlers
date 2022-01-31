@@ -34,6 +34,8 @@ func init() {
 	gob.Register(&o2.Token{})
 
 	store.MaxAge(60 * 60 * 8)
+
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
 type CloudShellSSHSessionOauthHandler struct {
