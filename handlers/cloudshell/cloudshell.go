@@ -204,7 +204,7 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 
 func logAndPrintInternal(session ssh.Session, msg string, skip int) {
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
-	msgWithSessionID := fmt.Sprintf("%s: "+msg, conn.SessionID())
+	msgWithSessionID := fmt.Sprintf("%s: "+msg, hex.EncodeToString(conn.SessionID()))
 	_, file, no, ok := runtime.Caller(skip)
 	if ok {
 		log.Println(fmt.Sprintf("%s:%d: %s", filepath.Base(file), no, msgWithSessionID))
