@@ -24,9 +24,6 @@ import (
 	"google.golang.org/api/oauth2/v2"
 	"google.golang.org/api/option"
 	"k8s.io/apimachinery/pkg/util/wait"
-
-	shell "cloud.google.com/go/shell/apiv1"
-	shellpb "google.golang.org/genproto/googleapis/cloud/shell/v1"
 )
 
 var (
@@ -220,13 +217,6 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 		session.Exit(1)
 		return
 	}
-	_, winCh, isPty := session.Pty()
-
-	if !isPty {
-		session.Exit(1)
-		return
-	}
-	logAndPrint(session, "started pty")
 
 	cert, ok := session.PublicKey().(*gossh.Certificate)
 	if !ok {
@@ -255,33 +245,96 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 			return
 		}
 	}
-	ctx := context.Background()
-	c, err := shell.NewCloudShellClient(ctx, option.WithTokenSource(g.OAuth2TokenStore.Get(cert.ValidPrincipals[0])))
-	if err != nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
-		return
-	}
-	defer c.Close()
+	defer g.SessionEmails.Set(sessionID, "")
 
-	req := &shellpb.GetEnvironmentRequest{
-		Name: "users/me/environments/default",
+	cloudShellSession, err := NewCloudShellSession(session, g.OAuth2TokenStore.Get(cert.ValidPrincipals[0]))
+	if err == nil {
+		logAndPrint(session, err.Error())
+		session.Exit(1)
+		return
 	}
-	resp, err := c.GetEnvironment(ctx, req)
+	cloudShell, err := cloudShellSession.Connect()
+	if err == nil {
+		logAndPrint(session, err.Error())
+		session.Exit(1)
+		return
+	}
+	defer cloudShell.Close()
+
+	ptyReq, winCh, isPty := session.Pty()
+	if !isPty {
+		session.Exit(1)
+		return
+	}
+
+	logAndPrint(session, "started pty")
+	modes := gossh.TerminalModes{
+		gossh.ECHO:          0,     // disable echoing
+		gossh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+		gossh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+	}
+	err = cloudShell.RequestPty(ptyReq.Term, ptyReq.Window.Width, ptyReq.Window.Height, modes)
 	if err != nil {
 		logAndPrint(session, err.Error())
 		session.Exit(1)
 		return
 	}
-	logAndPrint(session, fmt.Sprintf("%+v\n", resp))
+	stdIn, err := cloudShell.StdinPipe()
+	if err != nil {
+		logAndPrint(session, err.Error())
+		session.Exit(1)
+		return
+	}
+	defer stdIn.Close()
+
+	stdOut, err := cloudShell.StdoutPipe()
+	if err != nil {
+		logAndPrint(session, err.Error())
+		session.Exit(1)
+		return
+	}
+
+	stdErr, err := cloudShell.StderrPipe()
+	if err != nil {
+		logAndPrint(session, err.Error())
+		session.Exit(1)
+		return
+	}
+
+	// Start remote shell
+	if err := cloudShell.Shell(); err != nil {
+		logAndPrint(session, err.Error())
+		session.Exit(1)
+		return
+	}
 
 	go func() {
 		for win := range winCh {
-			log.Printf("%s: ignoring window change: %+v\n", sessionID, win)
+			cloudShell.WindowChange(win.Width, win.Height)
 		}
 	}()
 
-	// ensure session is marked as closed
-	g.SessionEmails.Set(sessionID, "")
-	session.Exit(0)
+	go func() {
+		io.Copy(stdIn, session)
+	}()
+	go func() {
+		io.Copy(session, stdOut)
+	}()
+	go func() {
+		io.Copy(session, stdErr)
+	}()
+
+	err = cloudShell.Wait()
+
+	// Pass along exit status
+	if err != nil {
+		log.Println(err.Error())
+		if exitErr, ok := err.(*gossh.ExitError); ok {
+			session.Exit(exitErr.ExitStatus())
+		} else {
+			session.Exit(1)
+		}
+	} else {
+		session.Exit(0)
+	}
 }
