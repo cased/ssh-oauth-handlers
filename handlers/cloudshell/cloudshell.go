@@ -200,12 +200,17 @@ func (g *CloudShellSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.
 	return errors.New("not implemented, Cloud Run can't run a modern shell")
 }
 
-func logAndPrint(session ssh.Session, msg string, a ...interface{}) {
+func logAndPrint(session ssh.Session, msg string) {
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
-	msgWithSessionID := fmt.Sprintf("%s: "+msg, sessionID, a)
+	msgWithSessionID := fmt.Sprintf("%s: "+msg, sessionID)
 	log.Println(msgWithSessionID)
 	io.WriteString(session, msgWithSessionID+"\n")
+}
+
+func logAndFail(session ssh.Session, msg string) {
+	logAndPrint(session, msg)
+	session.Exit(1)
 }
 
 func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
@@ -213,25 +218,22 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	sessionID := hex.EncodeToString(conn.SessionID())
 
 	if session.Command() != nil {
-		logAndPrint(session, "ignoring command: %s", session.Command())
-		session.Exit(1)
+		logAndFail(session, fmt.Sprintf("ignoring command: %s", session.Command()))
 		return
 	}
 
 	cert, ok := session.PublicKey().(*gossh.Certificate)
 	if !ok {
-		logAndPrint(session, "can't assert certificate")
-		session.Exit(1)
+		logAndFail(session, "can't assert certificate")
 		return
 	}
-	logAndPrint(session, fmt.Sprintf("cert keyID: %s", cert.KeyId))
-	if g.OAuth2TokenStore.Get(cert.ValidPrincipals[0]) != nil {
-		logAndPrint(session, "found cached credentials for %s", cert.ValidPrincipals[0])
-	} else {
+	email := cert.ValidPrincipals[0]
+	tokenSource := g.OAuth2TokenStore.Get(email)
+	if tokenSource == nil {
 		logAndPrint(session, fmt.Sprintf("login: %s", g.authURLGenerator(sessionID)))
 		err := wait.PollImmediate(1*time.Second, 45*time.Second, func() (bool, error) {
-			email := g.SessionEmails.Get(sessionID)
-			if g.SessionEmails.Get(sessionID) == "" {
+			tokenSource = g.OAuth2TokenStore.Get(email)
+			if tokenSource == nil {
 				io.WriteString(session, ".")
 				return false, nil
 			} else {
@@ -240,23 +242,20 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 			}
 		})
 		if err != nil {
-			logAndPrint(session, err.Error())
-			session.Exit(1)
+			logAndFail(session, err.Error())
 			return
 		}
 	}
 	defer g.SessionEmails.Set(sessionID, "")
 
-	cloudShellSession, err := NewCloudShellSession(session, g.OAuth2TokenStore.Get(cert.ValidPrincipals[0]))
-	if err == nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
+	cloudShellSession, err := NewCloudShellSession(session, tokenSource)
+	if err != nil {
+		logAndFail(session, err.Error())
 		return
 	}
 	cloudShell, err := cloudShellSession.Connect()
-	if err == nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
+	if err != nil {
+		logAndFail(session, err.Error())
 		return
 	}
 	defer cloudShell.Close()
@@ -275,36 +274,31 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	}
 	err = cloudShell.RequestPty(ptyReq.Term, ptyReq.Window.Width, ptyReq.Window.Height, modes)
 	if err != nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
+		logAndFail(session, err.Error())
 		return
 	}
 	stdIn, err := cloudShell.StdinPipe()
 	if err != nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
+		logAndFail(session, err.Error())
 		return
 	}
 	defer stdIn.Close()
 
 	stdOut, err := cloudShell.StdoutPipe()
 	if err != nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
+		logAndFail(session, err.Error())
 		return
 	}
 
 	stdErr, err := cloudShell.StderrPipe()
 	if err != nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
+		logAndFail(session, err.Error())
 		return
 	}
 
 	// Start remote shell
 	if err := cloudShell.Shell(); err != nil {
-		logAndPrint(session, err.Error())
-		session.Exit(1)
+		logAndFail(session, err.Error())
 		return
 	}
 
