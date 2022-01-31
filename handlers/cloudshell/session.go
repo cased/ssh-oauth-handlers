@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"net"
 
 	shell "cloud.google.com/go/shell/apiv1"
@@ -43,14 +44,14 @@ func NewCloudShellSession(casedShellSession ssh.Session, tokenSource o2.TokenSou
 
 	pub, priv, err := genKeyPair()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't generate keypair: %w", err)
 	}
 	cs.publicKey = pub
 	cs.privateKey = priv
 
 	c, err := shell.NewCloudShellClient(cs.ctx, option.WithTokenSource(cs.tokenSource))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't prepare CloudShell client: %w", err)
 	}
 	cs.cloudShellClient = c
 	return cs, nil
@@ -59,11 +60,11 @@ func NewCloudShellSession(casedShellSession ssh.Session, tokenSource o2.TokenSou
 func (css *cloudShellSession) Connect() (*gossh.Session, error) {
 	cloudShell, err := css.preparedCloudShell()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't prepare CloudShell: %w", err)
 	}
 	key, err := gossh.ParsePrivateKey([]byte(css.privateKey))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't parse private key: %w", err)
 	}
 
 	user, host, port := cloudShell.SshUsername, cloudShell.SshHost, cloudShell.SshPort
@@ -77,11 +78,11 @@ func (css *cloudShellSession) Connect() (*gossh.Session, error) {
 	// TODO keepalives
 	client, err := gossh.Dial("tcp", net.JoinHostPort(host, string(port)), config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't connect to %s:%d: %w", host, port, err)
 	}
 	session, err := client.NewSession()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't establish ssh session after connecting to %s:%d: %w", host, port, err)
 	}
 	css.cloudShellSession = session
 	return css.cloudShellSession, nil
@@ -92,7 +93,7 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 		Name: "users/me/environments/default",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't read environment: %w", err)
 	}
 	if cloudShell.State == shellpb.Environment_RUNNING {
 		req := &shellpb.AddPublicKeyRequest{
@@ -101,17 +102,17 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 		}
 		op, err := css.cloudShellClient.AddPublicKey(css.ctx, req)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("couldn't AddPublicKey: %w", err)
 		}
 		_, err = op.Wait(css.ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("couldn't refresh op: %w", err)
 		}
 		cloudShell, err = css.cloudShellClient.GetEnvironment(css.ctx, &shellpb.GetEnvironmentRequest{
 			Name: "users/me/environments/default",
 		})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("couldn't read environment: %w", err)
 		}
 		css.cloudShell = cloudShell
 		return css.cloudShell, nil
@@ -119,7 +120,7 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 	} else {
 		token, err := css.tokenSource.Token()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("couldn't obtain token: %w", err)
 		}
 		req := &shellpb.StartEnvironmentRequest{
 			Name:        "users/me/environments/default",
@@ -128,11 +129,11 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 		}
 		op, err := css.cloudShellClient.StartEnvironment(css.ctx, req)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("couldn't start environment: %w", err)
 		}
 		resp, err := op.Wait(css.ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("couldn't refresh op: %w", err)
 		}
 		css.cloudShell = resp.GetEnvironment()
 		return css.cloudShell, nil
