@@ -271,13 +271,13 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	}
 	defer cloudShell.Close()
 
-	_, winCh, isPty := session.Pty()
+	ptyReq, winCh, isPty := session.Pty()
 	if !isPty {
 		session.Exit(1)
 		return
 	}
 
-	err = cloudShell.RequestPty("vt100", 80, 40, gossh.TerminalModes{})
+	err = cloudShell.RequestPty(ptyReq.Term, ptyReq.Window.Width, ptyReq.Window.Height, gossh.TerminalModes{})
 	if err != nil {
 		logAndFail(session, err.Error())
 		return
@@ -308,8 +308,11 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	}
 
 	go func() {
+		err := cloudShell.WindowChange(ptyReq.Window.Width, ptyReq.Window.Width)
+		io.WriteString(session, fmt.Sprintf("%s\n", err.Error()))
 		for win := range winCh {
-			cloudShell.WindowChange(win.Width, win.Height)
+			err := cloudShell.WindowChange(win.Width, win.Height)
+			io.WriteString(session, fmt.Sprintf("%s\n", err.Error()))
 		}
 	}()
 
