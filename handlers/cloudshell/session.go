@@ -179,6 +179,13 @@ func (css *cloudShellSession) Close() (errs error) {
 		}
 	}
 	if css.cloudShellClient != nil {
+		css.cloudShellClient.RemovePublicKey(
+			css.ctx,
+			&shellpb.RemovePublicKeyRequest{
+				Environment: css.cloudShell.Name,
+				Key:         css.publicKey,
+			},
+		)
 		err := css.cloudShellClient.Close()
 		if err != nil {
 			errs = multierror.Append(errs, err)
