@@ -97,7 +97,7 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 	}
 	if cloudShell.State == shellpb.Environment_RUNNING {
 		req := &shellpb.AddPublicKeyRequest{
-			Environment: "users/me/environments/default",
+			Environment: cloudShell.Name,
 			Key:         css.publicKey,
 		}
 		op, err := css.cloudShellClient.AddPublicKey(css.ctx, req)
@@ -109,7 +109,7 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 			return nil, fmt.Errorf("couldn't refresh op: %w", err)
 		}
 		cloudShell, err = css.cloudShellClient.GetEnvironment(css.ctx, &shellpb.GetEnvironmentRequest{
-			Name: "users/me/environments/default",
+			Name: cloudShell.Name,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("couldn't read environment: %w", err)
@@ -118,18 +118,18 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 		return css.cloudShell, nil
 
 	} else {
-		_, err := css.tokenSource.Token()
+		token, err := css.tokenSource.Token()
 		if err != nil {
 			return nil, fmt.Errorf("couldn't obtain token: %w", err)
 		}
 		req := &shellpb.StartEnvironmentRequest{
-			Name: "users/me/environments/default",
-			// AccessToken: token.AccessToken,
-			PublicKeys: []string{css.publicKey},
+			Name:        cloudShell.Name,
+			AccessToken: token.AccessToken,
+			PublicKeys:  []string{css.publicKey},
 		}
 		op, err := css.cloudShellClient.StartEnvironment(css.ctx, req)
 		if err != nil {
-			return nil, fmt.Errorf("couldn't start environment (%+v): %w", cloudShell, err)
+			return nil, fmt.Errorf("couldn't start environment (%+v): %w", req, err)
 		}
 		resp, err := op.Wait(css.ctx)
 		if err != nil {
@@ -141,20 +141,14 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 }
 
 func (css *cloudShellSession) Close() (errs error) {
-	if css.cloudShellClient != nil {
-		err := css.cloudShellClient.Close()
-		if err != nil {
-			errs = multierror.Append(errs, err)
-		}
-	}
 	if css.cloudShellSession != nil {
 		err := css.cloudShellSession.Close()
 		if err != nil {
 			errs = multierror.Append(errs, err)
 		}
 	}
-	if css.casedShellSession != nil {
-		err := css.casedShellSession.Exit(0)
+	if css.cloudShellClient != nil {
+		err := css.cloudShellClient.Close()
 		if err != nil {
 			errs = multierror.Append(errs, err)
 		}
