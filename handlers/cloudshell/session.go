@@ -118,18 +118,18 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 		return css.cloudShell, nil
 
 	} else {
-		token, err := css.tokenSource.Token()
+		_, err := css.tokenSource.Token()
 		if err != nil {
 			return nil, fmt.Errorf("couldn't obtain token: %w", err)
 		}
 		req := &shellpb.StartEnvironmentRequest{
-			Name:        "users/me/environments/default",
-			AccessToken: token.AccessToken,
-			PublicKeys:  []string{css.publicKey},
+			Name: "users/me/environments/default",
+			// AccessToken: token.AccessToken,
+			PublicKeys: []string{css.publicKey},
 		}
 		op, err := css.cloudShellClient.StartEnvironment(css.ctx, req)
 		if err != nil {
-			return nil, fmt.Errorf("couldn't start environment: %w", err)
+			return nil, fmt.Errorf("couldn't start environment (%+v): %w", cloudShell, err)
 		}
 		resp, err := op.Wait(css.ctx)
 		if err != nil {
