@@ -267,9 +267,34 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	}
 	defer cloudShell.Close()
 
-	go io.Copy(session, cloudShell.Stdin)
-	go io.Copy(cloudShell.Stdout, session)
-	go io.Copy(cloudShell.Stderr, session)
+	stdIn, err := cloudShell.StdinPipe()
+	if err != nil {
+		logAndFail(session, err.Error())
+		return
+	}
+	defer stdIn.Close()
+
+	stdOut, err := cloudShell.StdoutPipe()
+	if err != nil {
+		logAndFail(session, err.Error())
+		return
+	}
+
+	stdErr, err := cloudShell.StderrPipe()
+	if err != nil {
+		logAndFail(session, err.Error())
+		return
+	}
+
+	go func() {
+		io.Copy(stdIn, session)
+	}()
+	go func() {
+		io.Copy(session, stdOut)
+	}()
+	go func() {
+		io.Copy(session.Stderr(), stdErr)
+	}()
 
 	ptyReq, winCh, isPty := session.Pty()
 	if !isPty {
