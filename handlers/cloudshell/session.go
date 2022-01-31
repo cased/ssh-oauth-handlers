@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	gossh "golang.org/x/crypto/ssh"
 	o2 "golang.org/x/oauth2"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	shellpb "google.golang.org/genproto/googleapis/cloud/shell/v1"
 )
@@ -129,7 +130,11 @@ func (css *cloudShellSession) preparedCloudShell() (cloudShell *shellpb.Environm
 		}
 		op, err := css.cloudShellClient.StartEnvironment(css.ctx, req)
 		if err != nil {
-			return nil, fmt.Errorf("couldn't start environment (%+v): %w", req, err)
+			if e, ok := err.(*googleapi.Error); ok {
+				return nil, fmt.Errorf("couldn't start environment (%+v): %+v: %w", req, e, err)
+			} else {
+				return nil, fmt.Errorf("couldn't start environment (%+v): %w", req, err)
+			}
 		}
 		resp, err := op.Wait(css.ctx)
 		if err != nil {
