@@ -79,13 +79,14 @@ func (css *cloudShellSession) Connect() (*gossh.Session, error) {
 		},
 	}
 	// TODO keepalives
-	client, err := gossh.Dial("tcp", net.JoinHostPort(host, string(port)), config)
+	netloc := net.JoinHostPort(host, string(port))
+	client, err := gossh.Dial("tcp", netloc, config)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't connect to %s:%d: %w", host, port, err)
+		return nil, fmt.Errorf("couldn't connect to %s: %w", netloc, err)
 	}
 	session, err := client.NewSession()
 	if err != nil {
-		return nil, fmt.Errorf("couldn't establish ssh session after connecting to %s:%d: %w", host, port, err)
+		return nil, fmt.Errorf("couldn't establish ssh session after connecting to %s: %w", netloc, err)
 	}
 	css.cloudShellSession = session
 	return css.cloudShellSession, nil
