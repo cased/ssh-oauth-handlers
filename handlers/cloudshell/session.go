@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 
@@ -105,6 +106,7 @@ func (css *cloudShellSession) preparedCloudShell() (*shellpb.Environment, error)
 		return nil, fmt.Errorf("couldn't obtain token: %w", err)
 	}
 	if css.cloudShell.State != shellpb.Environment_RUNNING {
+		io.WriteString(css.casedShellSession, "Starting Cloud Shell...")
 		req := &shellpb.StartEnvironmentRequest{
 			Name: css.cloudShell.Name,
 		}
@@ -117,6 +119,7 @@ func (css *cloudShellSession) preparedCloudShell() (*shellpb.Environment, error)
 			}
 		}
 		resp, err := op.Wait(css.ctx)
+		io.WriteString(css.casedShellSession, "done\n")
 		if err != nil {
 			return nil, fmt.Errorf("couldn't refresh op: %w", err)
 		}

@@ -248,7 +248,7 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 				io.WriteString(session, ".")
 				return false, nil
 			} else {
-				logAndPrint(session, fmt.Sprintf("authorized as %s", email))
+				io.WriteString(session, fmt.Sprintf("authorized as %s", email))
 				return true, nil
 			}
 		})
@@ -271,6 +271,10 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	}
 	defer cloudShell.Close()
 
+	cloudShell.Stdin = session
+	cloudShell.Stdout = session
+	cloudShell.Stderr = session
+
 	ptyReq, winCh, isPty := session.Pty()
 	if !isPty {
 		session.Exit(1)
@@ -282,26 +286,7 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 		logAndFail(session, err.Error())
 		return
 	}
-	stdIn, err := cloudShell.StdinPipe()
-	if err != nil {
-		logAndFail(session, err.Error())
-		return
-	}
-	defer stdIn.Close()
 
-	stdOut, err := cloudShell.StdoutPipe()
-	if err != nil {
-		logAndFail(session, err.Error())
-		return
-	}
-
-	stdErr, err := cloudShell.StderrPipe()
-	if err != nil {
-		logAndFail(session, err.Error())
-		return
-	}
-
-	// Start remote shell
 	if err := cloudShell.Shell(); err != nil {
 		logAndFail(session, err.Error())
 		return
