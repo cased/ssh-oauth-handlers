@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net"
+	"strings"
 
 	shell "cloud.google.com/go/shell/apiv1"
 	"github.com/gliderlabs/ssh"
@@ -179,5 +180,5 @@ func genKeyPair() (string, string, error) {
 	}
 
 	public := gossh.MarshalAuthorizedKey(pub)
-	return string(public), private.String(), nil
+	return strings.TrimSuffix(string(public), "\n"), private.String(), nil
 }
