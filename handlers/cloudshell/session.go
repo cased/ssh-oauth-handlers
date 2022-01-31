@@ -79,7 +79,7 @@ func (css *cloudShellSession) Connect() (*gossh.Session, error) {
 		},
 	}
 	// TODO keepalives
-	netloc := net.JoinHostPort(host, string(port))
+	netloc := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	client, err := gossh.Dial("tcp", netloc, config)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't connect to %s: %w", netloc, err)
