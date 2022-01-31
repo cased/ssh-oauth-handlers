@@ -315,10 +315,14 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 
 	go func() {
 		err := cloudShell.WindowChange(ptyReq.Window.Width, ptyReq.Window.Width)
-		io.WriteString(session, fmt.Sprintf("%s\n", err.Error()))
+		if err != nil {
+			io.WriteString(session, fmt.Sprintf("%s\n", err.Error()))
+		}
 		for win := range winCh {
 			err := cloudShell.WindowChange(win.Width, win.Height)
-			io.WriteString(session, fmt.Sprintf("%s\n", err.Error()))
+			if err != nil {
+				io.WriteString(session, fmt.Sprintf("%s\n", err.Error()))
+			}
 		}
 	}()
 
