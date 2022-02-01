@@ -248,13 +248,12 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	tokenSource := g.OAuth2TokenStore.Get(email)
 	if tokenSource == nil {
 		io.WriteString(session, g.authURLGenerator(sessionID)+"\n")
+		io.WriteString(session, "Waiting for authentication...\n")
 		err := wait.PollImmediate(1*time.Second, 45*time.Second, func() (bool, error) {
 			tokenSource = g.OAuth2TokenStore.Get(email)
 			if tokenSource == nil {
-				io.WriteString(session, ".")
 				return false, nil
 			} else {
-				io.WriteString(session, fmt.Sprintf("authorized as %s", email))
 				return true, nil
 			}
 		})
