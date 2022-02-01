@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -156,26 +155,11 @@ func Equal(a, b []string) bool {
 	return true
 }
 
-func (h *HerokuSSHSessionOauthHandler) validateCommand(cmd *exec.Cmd) error {
-	log.Printf("validating command: %+v", cmd.Args)
-	if cmd.Args[0] == "heroku" {
-		return nil
-	}
-	if Equal(cmd.Args, h.defaultCommand) {
-		return nil
-	}
-	return errors.New("command not recognized")
-}
-
 func (h *HerokuSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	// noop
 }
 
 func (h *HerokuSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
-	if err := h.validateCommand(cmd); err != nil {
-		return err
-	}
-
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
 	io.WriteString(session, "Login to Heroku: "+h.authURLGenerator(sessionID))
