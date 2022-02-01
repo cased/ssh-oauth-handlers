@@ -5,7 +5,7 @@ A SSH server that authenticates against Cased Shell and starts Sessions with an 
 Supported providers:
 
 - Heroku
-- _more to come_
+- Google Cloud Shell
 
 # Usage
 
@@ -16,3 +16,8 @@ Supported providers:
 ## Provider: Heroku
 
 See https://github.com/cased/shell-heroku, which contains a working Heroku configuration that deploys Cased Shell and this utility.
+
+
+## Provider: Google Cloud Shell
+
+See https://github.com/cased/shell-cloud-run, which contains a working Cloud Run configuration that deploys Cased Shell and this utility.
