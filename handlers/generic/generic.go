@@ -8,15 +8,23 @@ import (
 )
 
 type GenericSSHHandler struct {
-	DefaultCommand []string
+	defaultCommand []string
 	ShellUrl       string
 }
 
 func NewGenericSSHHandler(shellUrl string, defaultCommand []string) *GenericSSHHandler {
 	return &GenericSSHHandler{
 		ShellUrl:       shellUrl,
-		DefaultCommand: defaultCommand,
+		defaultCommand: defaultCommand,
 	}
+}
+
+func (h *GenericSSHHandler) DefaultCommand() []string {
+	return h.defaultCommand
+}
+
+func (h *GenericSSHHandler) SessionHandler(session ssh.Session) {
+	// noop
 }
 
 func (h *GenericSSHHandler) HandleAuth(w http.ResponseWriter, r *http.Request) {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/cased/ssh-oauth-handlers/handlers/cloudshell"
 	"github.com/cased/ssh-oauth-handlers/handlers/generic"
 	"github.com/cased/ssh-oauth-handlers/handlers/heroku"
 	"github.com/cased/ssh-oauth-handlers/sshhandlers"
@@ -32,6 +33,9 @@ func main() {
 		handler = heroku.NewHerokuSSHSessionOauthHandler(shellUrl, cmd)
 	case "generic":
 		handler = generic.NewGenericSSHHandler(shellUrl, cmd)
+	case "cloudshell":
+		// cloudshell ignores any set default command
+		handler = cloudshell.NewCloudShellSSHSessionOauthHandler(shellUrl, nil)
 	default:
 		usage()
 	}
@@ -53,7 +57,7 @@ func main() {
 		IdleTimeout:      60 * time.Second,
 		Version:          "Cased Shell + " + provider,
 	}
-	sshServer.Handle(sshHandler.CasedShellSessionHandler(handler, cmd))
+	sshServer.Handle(sshHandler.CasedShellSessionHandler(handler))
 
 	l, err := net.Listen("tcp", ":"+port)
 	if err != nil {
