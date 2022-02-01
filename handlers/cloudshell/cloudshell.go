@@ -219,12 +219,22 @@ func logAndFail(session ssh.Session, msg string) {
 	session.Exit(1)
 }
 
+func (g *CloudShellSSHSessionOauthHandler) validateCommand(cmd []string) (bool, error) {
+	if len(cmd) == 0 {
+		return true, nil
+	}
+	if len(cmd) >= 1 && cmd[0] == "gcloud" {
+		return true, nil
+	}
+	return false, fmt.Errorf("command not allowed: %s", cmd)
+}
+
 func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 	conn := getUnexportedField(reflect.ValueOf(session).Elem().FieldByName("conn")).(*gossh.ServerConn)
 	sessionID := hex.EncodeToString(conn.SessionID())
 
-	if session.Command() != nil {
-		logAndFail(session, fmt.Sprintf("ignoring command: %s", session.Command()))
+	if _, commandErr := g.validateCommand(session.Command()); commandErr != nil {
+		logAndFail(session, commandErr.Error())
 		return
 	}
 
@@ -308,9 +318,16 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 		return
 	}
 
-	if err := cloudShell.Shell(); err != nil {
-		logAndFail(session, err.Error())
-		return
+	if len(session.Command()) == 0 {
+		if err := cloudShell.Shell(); err != nil {
+			logAndFail(session, err.Error())
+			return
+		}
+	} else {
+		if err := cloudShell.Start(session.RawCommand()); err != nil {
+			logAndFail(session, err.Error())
+			return
+		}
 	}
 
 	go func() {
