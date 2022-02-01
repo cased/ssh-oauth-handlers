@@ -308,6 +308,7 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 
 	ptyReq, winCh, isPty := session.Pty()
 	if !isPty {
+		logAndFail(session, "pty required")
 		session.Exit(1)
 		return
 	}
