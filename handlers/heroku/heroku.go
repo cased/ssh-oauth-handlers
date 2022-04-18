@@ -251,3 +251,19 @@ func (h *HerokuSSHSessionOauthHandler) SSHSessionCommandHandler(session ssh.Sess
 	cmd.Env = append(cmd.Env, "HEROKU_API_KEY="+token)
 	return nil
 }
+
+func (h *HerokuSSHSessionOauthHandler) KeyboardInteractiveHandler(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
+	answers, err := challenger(ctx.User(), h.authURLGenerator(ctx.SessionID()), []string{"Press enter once authentication completed"}, []bool{false})
+	if len(answers) == 1 && answers[0] == "" && err == nil {
+		token := h.Tokens.Get(ctx.SessionID())
+		if token == "" || token == "pending" {
+			return false
+		} else {
+			// session has been authenticated
+			return true
+		}
+	} else {
+		return false
+	}
+
+}

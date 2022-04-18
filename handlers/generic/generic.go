@@ -5,6 +5,7 @@ import (
 	"os/exec"
 
 	"github.com/gliderlabs/ssh"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 type GenericSSHHandler struct {
@@ -41,4 +42,8 @@ func (h *GenericSSHHandler) HandleUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *GenericSSHHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
 	return nil
+}
+
+func (h *GenericSSHHandler) KeyboardInteractiveHandler(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
+	return true
 }

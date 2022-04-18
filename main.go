@@ -27,22 +27,22 @@ func main() {
 	if len(os.Args) < 4 {
 		usage()
 	}
-	var handler types.SSHSessionOauthHandler
+	var oauthHandler types.SSHSessionOauthHandler
 	switch provider {
 	case "heroku":
-		handler = heroku.NewHerokuSSHSessionOauthHandler(shellUrl, cmd)
+		oauthHandler = heroku.NewHerokuSSHSessionOauthHandler(shellUrl, cmd)
 	case "generic":
-		handler = generic.NewGenericSSHHandler(shellUrl, cmd)
+		oauthHandler = generic.NewGenericSSHHandler(shellUrl, cmd)
 	case "cloudshell":
 		// cloudshell ignores any set default command
-		handler = cloudshell.NewCloudShellSSHSessionOauthHandler(shellUrl, nil)
+		oauthHandler = cloudshell.NewCloudShellSSHSessionOauthHandler(shellUrl, nil)
 	default:
 		usage()
 	}
 
-	http.HandleFunc("/oauth/auth", handler.HandleAuth)
-	http.HandleFunc("/oauth/auth/callback", handler.HandleAuthCallback)
-	http.HandleFunc("/oauth/user", handler.HandleUser)
+	http.HandleFunc("/oauth/auth", oauthHandler.HandleAuth)
+	http.HandleFunc("/oauth/auth/callback", oauthHandler.HandleAuthCallback)
+	http.HandleFunc("/oauth/user", oauthHandler.HandleUser)
 
 	sshHandler := sshhandlers.NewCasedShellSSHHandler(shellUrl)
 
@@ -51,13 +51,19 @@ func main() {
 		port = "2225"
 	}
 
-	sshServer := &ssh.Server{
-		Addr:             ":" + port,
-		PublicKeyHandler: sshHandler.CasedShellPublicKeyHandler,
-		IdleTimeout:      60 * time.Second,
-		Version:          "Cased Shell + " + provider,
+	var kbd ssh.KeyboardInteractiveHandler
+	if os.Getenv("KBD") == "true" {
+		kbd = oauthHandler.KeyboardInteractiveHandler
 	}
-	sshServer.Handle(sshHandler.CasedShellSessionHandler(handler))
+
+	sshServer := &ssh.Server{
+		Addr:                       ":" + port,
+		PublicKeyHandler:           sshHandler.CasedShellPublicKeyHandler,
+		KeyboardInteractiveHandler: kbd,
+		IdleTimeout:                60 * time.Second,
+		Version:                    "Cased Shell + " + provider,
+	}
+	sshServer.Handle(sshHandler.CasedShellSessionHandler(oauthHandler))
 
 	l, err := net.Listen("tcp", ":"+port)
 	if err != nil {
