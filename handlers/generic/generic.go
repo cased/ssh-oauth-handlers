@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"log"
 	"net/http"
 	"os/exec"
 
@@ -45,5 +46,13 @@ func (h *GenericSSHHandler) SSHSessionCommandHandler(session ssh.Session, cmd *e
 }
 
 func (h *GenericSSHHandler) KeyboardInteractiveHandler(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
-	return true
+	answers, err := challenger(ctx.User(), "http://example.com", []string{"Press enter once authentication completed"}, []bool{false})
+	if len(answers) == 1 && answers[0] == "" && err == nil {
+		return true
+	} else {
+		if err != nil {
+			log.Printf("error obtaining answers: %v\n", err)
+		}
+		return false
+	}
 }
