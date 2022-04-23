@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os/exec"
 
+	"github.com/cased/ssh-oauth-handlers/partialauthhelper"
 	"github.com/gliderlabs/ssh"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -45,10 +46,16 @@ func (h *GenericSSHHandler) SSHSessionCommandHandler(session ssh.Session, cmd *e
 	return nil
 }
 
+func (h *GenericSSHHandler) PublicKeyHandler(ssh.Context, ssh.PublicKey) bool {
+	return false
+}
+
 func (h *GenericSSHHandler) KeyboardInteractiveHandler(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
 	answers, err := challenger(ctx.User(), "http://example.com", []string{"Press enter once authentication completed"}, []bool{false})
 	if len(answers) == 1 && answers[0] == "" && err == nil {
-		return true
+		helper := partialauthhelper.FromContext(ctx)
+		helper.Satisfy(partialauthhelper.KeyboardInteractiveAuthMethod)
+		return helper.Satified()
 	} else {
 		if err != nil {
 			log.Printf("error obtaining answers: %v\n", err)

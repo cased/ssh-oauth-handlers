@@ -10,6 +10,8 @@ import (
 	"github.com/cased/ssh-oauth-handlers/handlers/cloudshell"
 	"github.com/cased/ssh-oauth-handlers/handlers/generic"
 	"github.com/cased/ssh-oauth-handlers/handlers/heroku"
+	"github.com/cased/ssh-oauth-handlers/partialauthhelper"
+	"github.com/cased/ssh-oauth-handlers/publickeyhandler"
 	"github.com/cased/ssh-oauth-handlers/sshhandlers"
 	"github.com/cased/ssh-oauth-handlers/types"
 	"github.com/gliderlabs/ssh"
@@ -51,17 +53,17 @@ func main() {
 		port = "2225"
 	}
 
-	var kbd ssh.KeyboardInteractiveHandler
-	if os.Getenv("KBD") == "true" {
-		kbd = oauthHandler.KeyboardInteractiveHandler
-	}
-
 	sshServer := &ssh.Server{
-		Addr:                       ":" + port,
-		PublicKeyHandler:           sshHandler.CasedShellPublicKeyHandler,
-		KeyboardInteractiveHandler: kbd,
+		Addr:             ":" + port,
+		PublicKeyHandler: publickeyhandler.Handler,
+		// TODO short-circuit this too
+		KeyboardInteractiveHandler: oauthHandler.KeyboardInteractiveHandler,
 		IdleTimeout:                60 * time.Second,
 		Version:                    "Cased Shell + " + provider,
+		ConnCallback: func(ctx ssh.Context, conn net.Conn) net.Conn {
+			partialauthhelper.AddToContext(ctx)
+			return conn
+		},
 	}
 	sshServer.Handle(sshHandler.CasedShellSessionHandler(oauthHandler))
 
