@@ -17,15 +17,15 @@ const (
 type PartialAuthenticationHelper struct {
 	RequiredMethods  []string
 	satisfiedMethods []string
-	id               string
+	ctx              ssh.Context
 }
 
 func AddToContext(ctx ssh.Context) {
 	p := &PartialAuthenticationHelper{
 		RequiredMethods: []string{KeyboardInteractiveAuthMethod, PublicKeyAuthMethod},
-		id:              ctx.SessionID(),
+		ctx:             ctx,
 	}
-	ctx.SetValue(PartialAuthenticationHelperContextKey, p)
+	p.ctx.SetValue(PartialAuthenticationHelperContextKey, p)
 }
 
 func FromContext(ctx ssh.Context) *PartialAuthenticationHelper {
@@ -45,7 +45,7 @@ func (t *PartialAuthenticationHelper) Satisfy(method string) {
 func (t *PartialAuthenticationHelper) Satisfied() bool {
 	sort.Strings(t.RequiredMethods)
 	sort.Strings(t.satisfiedMethods)
-	fmt.Printf("%s: satisfied:%v, required: %v\n", t.id, t.satisfiedMethods, t.RequiredMethods)
+	fmt.Printf("%s: satisfied:%v, required: %v\n", t.ctx.SessionID(), t.satisfiedMethods, t.RequiredMethods)
 	return reflect.DeepEqual(t.RequiredMethods, t.satisfiedMethods)
 }
 
