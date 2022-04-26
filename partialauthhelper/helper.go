@@ -1,6 +1,7 @@
 package partialauthhelper
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 
@@ -8,20 +9,21 @@ import (
 )
 
 const (
-	KeyboardInteractiveAuthMethod         = "keyboard-interactive"
-	PublicKeyAuthMethod                   = "public-key"
-	PartialSuccessContextKey              = "PartialSuccess"
-	PartialAuthenticationHelperContextKey = "PartialAuthenticationHelper"
+	KeyboardInteractiveAuthMethod         string = "keyboard-interactive"
+	PublicKeyAuthMethod                   string = "public-key"
+	PartialAuthenticationHelperContextKey string = "PartialAuthenticationHelper"
 )
 
 type PartialAuthenticationHelper struct {
 	RequiredMethods  []string
 	satisfiedMethods []string
+	id               string
 }
 
 func AddToContext(ctx ssh.Context) {
 	p := &PartialAuthenticationHelper{
 		RequiredMethods: []string{KeyboardInteractiveAuthMethod, PublicKeyAuthMethod},
+		id:              ctx.SessionID(),
 	}
 	ctx.SetValue(PartialAuthenticationHelperContextKey, p)
 }
@@ -39,9 +41,11 @@ func (t *PartialAuthenticationHelper) Satisfy(method string) {
 	t.satisfiedMethods = append(t.satisfiedMethods, method)
 }
 
-func (t *PartialAuthenticationHelper) Satified() bool {
+// Returns true if all required methods have been satisfied
+func (t *PartialAuthenticationHelper) Satisfied() bool {
 	sort.Strings(t.RequiredMethods)
 	sort.Strings(t.satisfiedMethods)
+	fmt.Printf("%s: satisfied:%v, required: %v\n", t.id, t.satisfiedMethods, t.RequiredMethods)
 	return reflect.DeepEqual(t.RequiredMethods, t.satisfiedMethods)
 }
 

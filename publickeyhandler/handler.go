@@ -41,7 +41,7 @@ func Handler(ctx ssh.Context, pubKey ssh.PublicKey) (result bool) {
 	if result {
 		helper.Satisfy(partialauthhelper.PublicKeyAuthMethod)
 	}
-	return helper.Satified()
+	return helper.Satisfied()
 }
 
 func handle(ctx ssh.Context, pubKey ssh.PublicKey) bool {

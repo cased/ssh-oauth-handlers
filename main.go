@@ -54,9 +54,8 @@ func main() {
 	}
 
 	sshServer := &ssh.Server{
-		Addr:             ":" + port,
-		PublicKeyHandler: publickeyhandler.Handler,
-		// TODO short-circuit this too
+		Addr:                       ":" + port,
+		PublicKeyHandler:           publickeyhandler.Handler,
 		KeyboardInteractiveHandler: oauthHandler.KeyboardInteractiveHandler,
 		IdleTimeout:                60 * time.Second,
 		Version:                    "Cased Shell + " + provider,
