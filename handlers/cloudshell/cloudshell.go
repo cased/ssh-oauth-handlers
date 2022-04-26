@@ -342,3 +342,18 @@ func (g *CloudShellSSHSessionOauthHandler) SessionHandler(session ssh.Session) {
 		session.Exit(0)
 	}
 }
+
+func (g *CloudShellSSHSessionOauthHandler) KeyboardInteractiveHandler(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
+	answers, err := challenger(ctx.User(), g.authURLGenerator(ctx.SessionID()), []string{"Press enter once authentication completed"}, []bool{false})
+	if len(answers) == 1 && answers[0] == "" && err == nil {
+		token := g.SessionEmails.Get(ctx.SessionID())
+		if token == "" {
+			return false
+		} else {
+			// session has been authenticated
+			return true
+		}
+	} else {
+		return false
+	}
+}

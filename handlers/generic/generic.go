@@ -1,10 +1,13 @@
 package generic
 
 import (
+	"log"
 	"net/http"
 	"os/exec"
 
+	"github.com/cased/ssh-oauth-handlers/partialauthhelper"
 	"github.com/gliderlabs/ssh"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 type GenericSSHHandler struct {
@@ -41,4 +44,18 @@ func (h *GenericSSHHandler) HandleUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *GenericSSHHandler) SSHSessionCommandHandler(session ssh.Session, cmd *exec.Cmd) error {
 	return nil
+}
+
+func (h *GenericSSHHandler) KeyboardInteractiveHandler(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
+	answers, err := challenger(ctx.User(), "http://example.com", []string{"Press enter once authentication completed"}, []bool{false})
+	if len(answers) == 1 && answers[0] == "" && err == nil {
+		helper := partialauthhelper.FromContext(ctx)
+		helper.Satisfy(partialauthhelper.KeyboardInteractiveAuthMethod)
+		return helper.Satisfied()
+	} else {
+		if err != nil {
+			log.Printf("error obtaining answers: %v\n", err)
+		}
+		return false
+	}
 }

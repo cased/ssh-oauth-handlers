@@ -10,6 +10,8 @@ import (
 	"github.com/cased/ssh-oauth-handlers/handlers/cloudshell"
 	"github.com/cased/ssh-oauth-handlers/handlers/generic"
 	"github.com/cased/ssh-oauth-handlers/handlers/heroku"
+	"github.com/cased/ssh-oauth-handlers/partialauthhelper"
+	"github.com/cased/ssh-oauth-handlers/publickeyhandler"
 	"github.com/cased/ssh-oauth-handlers/sshhandlers"
 	"github.com/cased/ssh-oauth-handlers/types"
 	"github.com/gliderlabs/ssh"
@@ -27,22 +29,22 @@ func main() {
 	if len(os.Args) < 4 {
 		usage()
 	}
-	var handler types.SSHSessionOauthHandler
+	var oauthHandler types.SSHSessionOauthHandler
 	switch provider {
 	case "heroku":
-		handler = heroku.NewHerokuSSHSessionOauthHandler(shellUrl, cmd)
+		oauthHandler = heroku.NewHerokuSSHSessionOauthHandler(shellUrl, cmd)
 	case "generic":
-		handler = generic.NewGenericSSHHandler(shellUrl, cmd)
+		oauthHandler = generic.NewGenericSSHHandler(shellUrl, cmd)
 	case "cloudshell":
 		// cloudshell ignores any set default command
-		handler = cloudshell.NewCloudShellSSHSessionOauthHandler(shellUrl, nil)
+		oauthHandler = cloudshell.NewCloudShellSSHSessionOauthHandler(shellUrl, nil)
 	default:
 		usage()
 	}
 
-	http.HandleFunc("/oauth/auth", handler.HandleAuth)
-	http.HandleFunc("/oauth/auth/callback", handler.HandleAuthCallback)
-	http.HandleFunc("/oauth/user", handler.HandleUser)
+	http.HandleFunc("/oauth/auth", oauthHandler.HandleAuth)
+	http.HandleFunc("/oauth/auth/callback", oauthHandler.HandleAuthCallback)
+	http.HandleFunc("/oauth/user", oauthHandler.HandleUser)
 
 	sshHandler := sshhandlers.NewCasedShellSSHHandler(shellUrl)
 
@@ -52,12 +54,17 @@ func main() {
 	}
 
 	sshServer := &ssh.Server{
-		Addr:             ":" + port,
-		PublicKeyHandler: sshHandler.CasedShellPublicKeyHandler,
-		IdleTimeout:      60 * time.Second,
-		Version:          "Cased Shell + " + provider,
+		Addr:                       ":" + port,
+		PublicKeyHandler:           publickeyhandler.Handler,
+		KeyboardInteractiveHandler: oauthHandler.KeyboardInteractiveHandler,
+		IdleTimeout:                60 * time.Second,
+		Version:                    "Cased Shell + " + provider,
+		ConnCallback: func(ctx ssh.Context, conn net.Conn) net.Conn {
+			partialauthhelper.AddToContext(ctx)
+			return conn
+		},
 	}
-	sshServer.Handle(sshHandler.CasedShellSessionHandler(handler))
+	sshServer.Handle(sshHandler.CasedShellSessionHandler(oauthHandler))
 
 	l, err := net.Listen("tcp", ":"+port)
 	if err != nil {

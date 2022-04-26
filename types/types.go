@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/gliderlabs/ssh"
+	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 )
 
@@ -40,6 +41,7 @@ type SSHSessionOauthHandler interface {
 	DefaultCommand() []string
 	SSHSessionCommandHandler(ssh.Session, *exec.Cmd) error
 	SessionHandler(ssh.Session)
+	KeyboardInteractiveHandler(ctx ssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool
 }
 
 type OAuth2TokenStore interface {
